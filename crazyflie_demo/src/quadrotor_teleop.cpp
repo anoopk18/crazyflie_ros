@@ -31,6 +31,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/Joy.h>
 #include <geometry_msgs/Twist.h>
+#include <stdio.h>
 
 class Teleop
 {
@@ -67,10 +68,10 @@ public:
   {
     ros::NodeHandle params("~");
 
-    params.param<int>("x_axis", axes_.x.axis, 4);
-    params.param<int>("y_axis", axes_.y.axis, 3);
-    params.param<int>("z_axis", axes_.z.axis, 2);
-    params.param<int>("yaw_axis", axes_.yaw.axis, 1);
+    params.param<int>("x_axis", axes_.x.axis, 4); //pitch, used to be 4
+    params.param<int>("y_axis", axes_.y.axis, 3); //roll, used to be 3
+    params.param<int>("z_axis", axes_.z.axis, 2); //thrust, used to be 2
+    params.param<int>("yaw_axis", axes_.yaw.axis, 1); //yaw, used to be 1
 
     params.param<double>("yaw_velocity_max", axes_.yaw.max, 90.0 * M_PI / 180.0);
 
@@ -102,8 +103,9 @@ public:
 
   void joyTwistCallback(const sensor_msgs::JoyConstPtr &joy)
   {
-    velocity_.linear.x = getAxis(joy, axes_.x);
+    velocity_.linear.x = -getAxis(joy, axes_.x);
     velocity_.linear.y = getAxis(joy, axes_.y);
+    ROS_INFO_STREAM(getAxis(joy, axes_.z));
     velocity_.linear.z = getAxis(joy, axes_.z);
     velocity_.angular.z = getAxis(joy, axes_.yaw);
   }
@@ -120,6 +122,9 @@ public:
     }
     if ((size_t) axis.axis > joy->axes.size()) {
       return 0;
+    }
+    if (axis.axis == 1) {
+	return (-sign*joy->axes[axis.axis - 1]+1) * axis.max/2;
     }
     return sign * joy->axes[axis.axis - 1] * axis.max;
   }

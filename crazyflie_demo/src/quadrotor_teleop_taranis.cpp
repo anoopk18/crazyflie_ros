@@ -122,7 +122,9 @@ public:
     if ((size_t) axis.axis > joy->axes.size()) {
       return 0;
     }
-
+    if (axis.axis == 1) {
+	return (sign*joy->axes[axis.axis - 1]+1) * axis.max/2;
+    }
     return sign * joy->axes[axis.axis - 1] * axis.max;
   }
 

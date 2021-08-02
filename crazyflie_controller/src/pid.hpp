@@ -5,8 +5,7 @@
 class PID
 {
 public:
-    PID(
-        float kp,
+    PID(float kp,
         float kd,
         float ki,
         float minOutput,
@@ -80,4 +79,4 @@ private:
     float m_integral;
     float m_previousError;
     ros::Time m_previousTime;
-};
+}

@@ -307,10 +307,11 @@ void cmdPositionSetpoint(
     return true;
   }
 
+
   void cmdVelChanged(
     const geometry_msgs::Twist::ConstPtr& msg)
   {
-    if (!m_isEmergency) {
+   if (!m_isEmergency) {
       float roll = msg->linear.y + m_roll_trim;
       float pitch = - (msg->linear.x + m_pitch_trim);
       float yawrate = msg->angular.z;

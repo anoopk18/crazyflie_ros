@@ -31,6 +31,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/Joy.h>
 #include <geometry_msgs/Twist.h>
+#include <geometry_msgs/TwistStamped.h>
 #include <stdio.h>
 
 class Teleop
@@ -39,8 +40,10 @@ private:
   ros::NodeHandle node_handle_;
   ros::Subscriber joy_subscriber_;
 
+  ros::Publisher velocity_logger_;
   ros::Publisher velocity_publisher_;
   geometry_msgs::Twist velocity_;
+  geometry_msgs::TwistStamped velocity_stamped_;
 
   struct Axis
   {
@@ -83,6 +86,7 @@ public:
 
     joy_subscriber_ = node_handle_.subscribe<sensor_msgs::Joy>("joy", 1, boost::bind(&Teleop::joyTwistCallback, this, _1));
     velocity_publisher_ = node_handle_.advertise<geometry_msgs::Twist>("cmd_vel", 10);
+    velocity_logger_ = node_handle_.advertise<geometry_msgs::TwistStamped>("cmd_vel_stamped", 10);  // time stampled velocity information
   }
 
   ~Teleop()
@@ -95,7 +99,7 @@ public:
     ros::Rate loop_rate(frequency_);
     while (ros::ok()) {
       velocity_publisher_.publish(velocity_);
-
+      velocity_logger_.publish(velocity_stamped_);
       ros::spinOnce();
       loop_rate.sleep();
     }
@@ -107,6 +111,12 @@ public:
     velocity_.linear.y = getAxis(joy, axes_.y);
     velocity_.linear.z = getAxis(joy, axes_.z);
     velocity_.angular.z = getAxis(joy, axes_.yaw);
+    
+    velocity_stamped_.twist.linear.x = getAxis(joy, axes_.x);
+    velocity_stamped_.twist.linear.y = getAxis(joy, axes_.y);
+    velocity_stamped_.twist.linear.z = getAxis(joy, axes_.z);
+    velocity_stamped_.twist.angular.z = getAxis(joy, axes_.yaw);
+    velocity_stamped_.header.stamp = ros::Time::now();
   }
 
   sensor_msgs::Joy::_axes_type::value_type getAxis(const sensor_msgs::JoyConstPtr &joy, Axis axis)
@@ -141,7 +151,9 @@ public:
   {
     if(velocity_publisher_.getNumSubscribers() > 0) {
       velocity_ = geometry_msgs::Twist();
+      velocity_stamped_ = geometry_msgs::TwistStamped();
       velocity_publisher_.publish(velocity_);
+      velocity_logger_.publish(velocity_stamped_);
     }
   }
 };

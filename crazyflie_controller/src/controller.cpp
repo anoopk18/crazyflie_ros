@@ -2,6 +2,7 @@
 #include <tf/transform_listener.h>
 #include <std_srvs/Empty.h>
 #include <geometry_msgs/Twist.h>
+#include <geometry_msgs/TwistStamped.h>
 
 
 #include "pid.hpp"
@@ -25,6 +26,7 @@ public:
         : m_worldFrame(worldFrame)
         , m_frame(frame)
         , m_pubNav()
+        , m_pubNavStamped()
         , m_listener()
         , m_pidX(
             get(n, "PIDs/X/kp"),
@@ -73,6 +75,7 @@ public:
         ros::NodeHandle nh;
         m_listener.waitForTransform(m_worldFrame, m_frame, ros::Time(0), ros::Duration(10.0)); 
         m_pubNav = nh.advertise<geometry_msgs::Twist>("cmd_vel", 1);
+        m_pubNavStamped = nh.advertise<geometry_msgs::TwistStamped>("cmd_vel_stamped", 1);
         m_subscribeGoal = nh.subscribe("goal", 1, &Controller::goalChanged, this);
         m_serviceTakeoff = nh.advertiseService("takeoff", &Controller::takeoff, this);
         m_serviceLand = nh.advertiseService("land", &Controller::land, this);
@@ -156,8 +159,12 @@ private:
                 {
                     m_thrust += 10000 * dt;
                     geometry_msgs::Twist msg;
+                    geometry_msgs::TwistStamped msg_stamped;
                     msg.linear.z = m_thrust;
+                    msg_stamped.twist.linear.z = m_thrust;
+                    msg_stamped.header.stamp = ros::Time::now();
                     m_pubNav.publish(msg);
+                    m_pubNavStamped.publish(msg_stamped);
                 }
 
             }
@@ -170,7 +177,10 @@ private:
                 if (transform.getOrigin().z() <= m_startZ + 0.05) {
                     m_state = Idle;
                     geometry_msgs::Twist msg;
+                    geometry_msgs::TwistStamped msg_stamped;
+                    msg_stamped.header.stamp = ros::Time::now();
                     m_pubNav.publish(msg);
+                    m_pubNavStamped.publish(msg_stamped);
                 }
             }
             // intentional fall-thru
@@ -197,19 +207,31 @@ private:
                     )).getRPY(roll, pitch, yaw);
 
                 geometry_msgs::Twist msg;
+                geometry_msgs::TwistStamped msg_stamped;
                 msg.linear.x = m_pidX.update(0.0, targetDrone.pose.position.x);
                 msg.linear.y = m_pidY.update(0.0, targetDrone.pose.position.y);
                 msg.linear.z = m_pidZ.update(0.0, targetDrone.pose.position.z);
                 msg.angular.z = m_pidYaw.update(0.0, yaw);
+                
+                msg_stamped.twist.linear.x = msg.linear.x;
+                msg_stamped.twist.linear.y = msg.linear.y;
+                msg_stamped.twist.linear.z = msg.linear.z;
+                msg_stamped.twist.angular.z = msg.angular.z;
+                msg_stamped.header.stamp = ros::Time::now();
+                
                 m_pubNav.publish(msg);
-
+                m_pubNavStamped.publish(msg_stamped);
 
             }
             break;
         case Idle:
             {
                 geometry_msgs::Twist msg;
+                geometry_msgs::TwistStamped msg_stamped;
+                msg_stamped.header.stamp = ros::Time::now();
+
                 m_pubNav.publish(msg);
+                m_pubNavStamped.publish(msg_stamped);
             }
             break;
         }
@@ -229,6 +251,7 @@ private:
     std::string m_worldFrame;
     std::string m_frame;
     ros::Publisher m_pubNav;
+    ros::Publisher m_pubNavStamped;
     tf::TransformListener m_listener;
     PID m_pidX;
     PID m_pidY;

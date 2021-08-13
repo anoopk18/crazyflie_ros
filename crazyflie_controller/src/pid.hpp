@@ -79,4 +79,4 @@ private:
     float m_integral;
     float m_previousError;
     ros::Time m_previousTime;
-}
+};

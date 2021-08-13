@@ -123,7 +123,8 @@ public:
       return 0;
     }
     if (axis.axis == 1) {
-	return (sign*joy->axes[axis.axis - 1]+1) * axis.max/2;
+        ROS_INFO_STREAM("Joy gives: " << joy->axes[axis.axis-1]);
+	return (sign*joy->axes[axis.axis - 1]-1) * axis.max/2;
     }
     return sign * joy->axes[axis.axis - 1] * axis.max;
   }
@@ -150,7 +151,7 @@ public:
 
 int main(int argc, char **argv)
 {
-  ros::init(argc, argv, "quadrotor_teleop");
+  ros::init(argc, argv, "quadrotor_teleop_taranis");
 
   Teleop teleop;
   teleop.execute();

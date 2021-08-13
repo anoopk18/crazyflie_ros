@@ -30,10 +30,10 @@
 
   <!--<node pkg="rqt_plot" type="rqt_plot" name="rqt_plot" args="/crazyflie/temperature/temperature"/> -->
 
-  <node pkg="rqt_plot" type="rqt_plot" name="rqt_plot3" args="/crazyflie/battery"/>
+  <!--node pkg="rqt_plot" type="rqt_plot" name="rqt_plot3" args="/crazyflie/battery"/>
 
   <node pkg="rqt_plot" type="rqt_plot" name="rqt_plot4" args="/crazyflie/rssi"/>
 
-  <node pkg="rqt_graph" type="rqt_graph" name="rqt_graph">
+  <node pkg="rqt_graph" type="rqt_graph" name="rqt_graph"/-->
 
 </launch>

@@ -134,6 +134,7 @@ private:
 
     void iteration(const ros::TimerEvent& e)
     {
+        ROS_INFO_STREAM("controller.cpp: In Iteration\nstate: " << m_state);
         float dt = e.current_real.toSec() - e.last_real.toSec();
 
         switch(m_state)
@@ -142,8 +143,10 @@ private:
             {
                 tf::StampedTransform transform;
                 m_listener.lookupTransform(m_worldFrame, m_frame, ros::Time(0), transform);
-                if (transform.getOrigin().z() > m_startZ + 0.05 || m_thrust > 50000)
+                ROS_INFO_STREAM("\ncurrent z is: " << transform.getOrigin().z());
+                if (transform.getOrigin().z() > m_startZ + 0.1 || m_thrust > 50000)
                 {
+                    ROS_INFO_STREAM("in here, setting state to auto");
                     pidReset();
                     m_pidZ.setIntegral(m_thrust / m_pidZ.ki());
                     m_state = Automatic;
@@ -194,7 +197,7 @@ private:
                     )).getRPY(roll, pitch, yaw);
 
                 geometry_msgs::Twist msg;
-                msg.linear.x = m_pidX.update(0, targetDrone.pose.position.x);
+                msg.linear.x = m_pidX.update(0.0, targetDrone.pose.position.x);
                 msg.linear.y = m_pidY.update(0.0, targetDrone.pose.position.y);
                 msg.linear.z = m_pidZ.update(0.0, targetDrone.pose.position.z);
                 msg.angular.z = m_pidYaw.update(0.0, yaw);
@@ -247,7 +250,7 @@ int main(int argc, char **argv)
   // Read parameters
   ros::NodeHandle n("~");
   std::string worldFrame;
-  n.param<std::string>("worldFrame", worldFrame, "/world");
+  n.param<std::string>("worldFrame", worldFrame, "world");
   std::string frame;
   n.getParam("frame", frame);
   double frequency;

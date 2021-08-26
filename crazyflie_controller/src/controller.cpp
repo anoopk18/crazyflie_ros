@@ -137,7 +137,7 @@ private:
 
     void iteration(const ros::TimerEvent& e)
     {
-        ROS_INFO_STREAM("controller.cpp: In Iteration\nstate: " << m_state);
+        //ROS_INFO_STREAM("controller.cpp: In Iteration\nstate: " << m_state);
         float dt = e.current_real.toSec() - e.last_real.toSec();
 
         switch(m_state)

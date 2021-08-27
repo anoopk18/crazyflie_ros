@@ -3,7 +3,7 @@ from scipy.spatial.transform import Rotation
 
 
 class MPControl(object):
-    def __init__(self, quad_params):
+    def __init__(self):
         # Quadrotor physical parameters.
         self.mass = 0.03  # quad_params['mass'] # kg
         self.Ixx = 1.43e-5  # quad_params['Ixx']  # kg*m^2
@@ -105,6 +105,12 @@ class MPControl(object):
             gamma = np.arctan2(R[1, 0] / np.cos(beta), R[0, 0] / np.cos(beta))
             return np.array((alpha, beta, gamma))
 
+        def map_thrust(thrust):
+            m = 15000/0.0453
+            c = 30000 - 0.27*m
+            mapped_thrust = thrust*m + c
+            return mapped_thrust
+
         # Geometric nonlinear controller
         r = Rotation.from_quat(quats)
         rot_mat = r.as_matrix()
@@ -116,6 +122,8 @@ class MPControl(object):
         b2_des = np.cross(b3_des, a_psi) / np.linalg.norm(np.cross(b3_des, a_psi))
         rot_des = np.array([[np.cross(b2_des, b3_des)], [b2_des], [b3_des]]).T
         rot_des = np.squeeze(rot_des)
+        euler = rot2eul(rot_des) # euler angles from rotation matrix
+
         err_mat = 0.5 * (rot_des.T @ rot_mat - rot_mat.T @ rot_des)
         err_vec = np.array([-err_mat[1, 2], err_mat[0, 2], -err_mat[0, 1]])
 
@@ -139,8 +147,9 @@ class MPControl(object):
         r = Rotation.from_matrix(rot_des)
         cmd_quat = r.as_quat()
 
-        control_input = {'cmd_motor_speeds': cmd_motor_speeds,
-                         'cmd_thrust': cmd_thrust,
+        control_input = {'euler': euler,
+                         'cmd_motor_speeds': cmd_motor_speeds,
+                         'cmd_thrust': map_thrust(cmd_thrust),
                          'cmd_moment': cmd_moment,
                          'cmd_quat': cmd_quat,
                          'r_ddot_des': np.zeros((3,))}

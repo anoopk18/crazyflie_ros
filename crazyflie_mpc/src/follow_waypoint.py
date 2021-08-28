@@ -3,12 +3,17 @@ import numpy as np
 import rospy
 import tf2_ros as tf
 from tf.transformations import euler_from_quaternion
+from tf.transformations import quaternion_matrix
+from tf.transformations import euler_from_matrix
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import Vector3
+from sensor_msgs.msg import Imu
 from tf import TransformListener
 from std_msgs.msg import String
 
+from scipy.spatial.transform import Rotation
 import waypoint_traj as wt
 import mpc_control as mc
 
@@ -25,14 +30,11 @@ class MPCDemo():
         
         self.rate = rospy.Rate(50)
         self.pubGoal = rospy.Publisher('goal', PoseStamped, queue_size=1)
+        self.imu_sub = rospy.Subscriber('/crazyflie/imu', Imu, self.imu_callback)
         self.pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)
         self.m_state = 1 # Idle: 0, Automatic: 1, TakingOff: 2, Landing: 3
         self.points = np.array([[0.0, 0.0, 0.0],
-                                [2.0, 0.0, 0.0],
-                                [2.0, 2.0, 0.0],
-                                [2.0, 2.0, 2.0],
-                                [0.0, 2.0, 2.0],
-                                [0.0, 0.0, 2.0]])
+                                [0.0, 0.0, 0.4]])
         self.traj = self.generate_traj()
         print("traj x dim", self.traj.update(0.1)['x'].shape )
         self.controller = mc.MPControl()
@@ -40,33 +42,31 @@ class MPCDemo():
                               'v': np.array([0, 0, 0]), # velocities
                               'q': np.array([0, 0, 0, 1]), # quaternion
                               'w': np.zeros(3,)} # angular vel
+        self.t0 = rospy.get_time()
         self.prev_time = rospy.get_time()
         self.prev_pos = self.initial_state['x']
-        self.prev_ang = euler_from_quaternion(self.initial_state['q'])
+        self.angular_vel = np.zeros([3,])
     
+    def imu_callback(self, data):
+        imu_angular_vel = Vector3()
+        imu_angular_vel = data.angular_velocity
+        self.angular_vel[0] = imu_angular_vel.x
+        self.angular_vel[1] = imu_angular_vel.y
+        self.angular_vel[2] = imu_angular_vel.z
+
     def takingoffService(self, req):
         pass
-
-
     def landingService(self, req):
         pass
-        
-
-    def rot2eul(R):
+    def rot2eul(self, R):
         beta = -np.arcsin(R[2, 0])
         alpha = np.arctan2(R[2, 1] / np.cos(beta), R[2, 2] / np.cos(beta))
         gamma = np.arctan2(R[1, 0] / np.cos(beta), R[0, 0] / np.cos(beta))
         return np.array((alpha, beta, gamma))
-
-
     def generate_traj(self):
         return wt.WaypointTraj(self.points) 
-
-        
     def takingoff(self):
         pass
-
-
     def landing(self):
         rospy.loginfo("landing")
         (pos, quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, rospy.Time(0))
@@ -75,45 +75,62 @@ class MPCDemo():
             msg = Twist()
             self.pub.publish(msg)
 
+    
+    def sanitize_trajectory_dic(self, trajectory_dic):
+        """
+        Return a sanitized version of the trajectory dictionary where all of the elements are np arrays
+        """
+        trajectory_dic['x'] = np.asarray(trajectory_dic['x'], np.float).ravel()
+        trajectory_dic['x_dot'] = np.asarray(trajectory_dic['x_dot'], np.float).ravel()
+        trajectory_dic['x_ddot'] = np.asarray(trajectory_dic['x_ddot'], np.float).ravel()
+        trajectory_dic['x_dddot'] = np.asarray(trajectory_dic['x_dddot'], np.float).ravel()
+        trajectory_dic['x_ddddot'] = np.asarray(trajectory_dic['x_ddddot'], np.float).ravel()
 
+        return trajectory_dic
+    
     def automatic(self):
         curr_time = rospy.get_time()
         dt = curr_time - self.prev_time
+        flat = self.sanitize_trajectory_dic(self.traj.update(curr_time-self.t0))
+        #print("curr time is:\n", curr_time)
+        #print("flat output is:\n", flat)
+
         transform = TransformStamped() # for getting transforms
         self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
         t = self.tf_listener.getLatestCommonTime(self.frame, self.worldFrame)
         (pos, quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, t)
         v = (np.array(pos)-np.array(self.prev_pos))/dt         
 
-        targetWorld = PoseStamped()
-        targetWorld.header.stamp = transform.header.stamp 
-        targetWorld.header.frame_id = self.worldFrame
+        #targetWorld = PoseStamped()
+        #targetWorld.header.stamp = transform.header.stamp 
+        #targetWorld.header.frame_id = self.worldFrame
         #targetWorld.pose = 
         
-        targetDrone = self.tf_listener.transformPose(self.frame, targetWorld)
+        #targetDrone = self.tf_listener.transformPose(self.frame, targetWorld)
         
-        quaternion = (
-                targetDrone.pose.orientation.x,
-                targetDrone.pose.orientation.y,
-                targetDrone.pose.orientation.z,
-                targetDrone.pose.orientation.w)
+        #quaternion = (
+        #        targetDrone.pose.orientation.x,
+        #        targetDrone.pose.orientation.y,
+        #        targetDrone.pose.orientation.z,
+        #        targetDrone.pose.orientation.w)
         
+        # print("2 ========= quaternion of the drone is: \n", quat)
+        # print("3 ========= position of the drone is: \n", pos)
         
-        euler = euler_from_quaternion(quaternion)
-        w = (np.array(euler) - np.array(self.prev_ang))/dt
+        #euler = euler_from_quaternion(quat)
+        #euler_scipy = Rotation.from_quat(quat).as_euler('xyz')
         
+        #print("euler diff: \n", euler - euler_scipy)
+                
+
+        print("getting angular:\n", self.angular_vel)
         curr_state = {
                     'x': np.array(pos),
                     'v': v,
                     'q': np.array(quat),
-                    'w': w}
-
-        flat_output = { # 'x', 'x_dot', 'yaw'
-                    'x': np.array([0.217, 4.5458, 0.]),
-                    'x_dot': np.array([0., 0., 0.]),
-                    'yaw': 0}         
-        
-        u = self.controller.update(curr_time, curr_state, flat_output)
+                    'w': self.angular_vel}
+ 
+        u = self.controller.update(curr_time, curr_state, flat)
         roll = u['euler'][0]
         pitch = u['euler'][1]
         yaw = u['euler'][2]
@@ -124,11 +141,10 @@ class MPCDemo():
         msg.linear.y = pitch
         msg.linear.z = thrust
         msg.angular.z = 0 # hardcoding yawrate to be 0 for now
-        self.pub.publish(msg) # publishing msg to quad
+        self.pub.publish(msg) # publishing msg to the crazyflie
 
         self.prev_time = curr_time
         self.prev_pos = pos
-        self.prev_ang = euler
 
     def idle(self):
         rospy.loginfo("idling")     

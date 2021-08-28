@@ -1,5 +1,6 @@
 from casadi import *
 from scipy.spatial.transform import Rotation
+from tf.transformations import euler_from_matrix
 
 
 class MPControl(object):
@@ -17,7 +18,7 @@ class MPControl(object):
 
         self.inertia = np.diag(np.array([self.Ixx, self.Iyy, self.Izz]))  # kg*m^2
         self.g = 9.81  # m/s^2
-
+        
         self.geo_rollpitch_kp = 100
         self.geo_rollpitch_kd = 2 * 0.8 * np.sqrt(self.geo_rollpitch_kp)
         self.geo_yaw_kp = 50
@@ -99,17 +100,17 @@ class MPControl(object):
         self.downsample_cnt += 1
 
         # Position controller
-        def rot2eul(R):
-            beta = -np.arcsin(R[2, 0])
-            alpha = np.arctan2(R[2, 1] / np.cos(beta), R[2, 2] / np.cos(beta))
-            gamma = np.arctan2(R[1, 0] / np.cos(beta), R[0, 0] / np.cos(beta))
-            return np.array((alpha, beta, gamma))
+        #def rot2eul(R):
+        #    beta = -np.arcsin(R[2, 0])
+        #    alpha = np.arctan2(R[2, 1] / np.cos(beta), R[2, 2] / np.cos(beta))
+        #    gamma = np.arctan2(R[1, 0] / np.cos(beta), R[0, 0] / np.cos(beta))
+        #    return np.array((alpha, beta, gamma))
 
         def map_thrust(thrust):
-            m = 15000/0.0453
-            c = 30000 - 0.27*m
+            m = 50000/0.575
+            c = 10000
             mapped_thrust = thrust*m + c
-            return mapped_thrust
+            return thrust
 
         # Geometric nonlinear controller
         r = Rotation.from_quat(quats)
@@ -122,7 +123,7 @@ class MPControl(object):
         b2_des = np.cross(b3_des, a_psi) / np.linalg.norm(np.cross(b3_des, a_psi))
         rot_des = np.array([[np.cross(b2_des, b3_des)], [b2_des], [b3_des]]).T
         rot_des = np.squeeze(rot_des)
-        euler = rot2eul(rot_des) # euler angles from rotation matrix
+        euler = euler_from_matrix(rot_des) # euler angles from rotation matrix
 
         err_mat = 0.5 * (rot_des.T @ rot_mat - rot_mat.T @ rot_des)
         err_vec = np.array([-err_mat[1, 2], err_mat[0, 2], -err_mat[0, 1]])

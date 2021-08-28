@@ -40,9 +40,9 @@ class SE3Control(object):
         self.g              = 9.81 # m/s^2
 
         # STUDENT CODE HERE
-        self.pos_kp = 20.0
+        self.pos_kp = 2.0
         self.pos_kd = 2 * 1.0 * np.sqrt(self.pos_kp)
-        self.posz_kp = 20.0
+        self.posz_kp = 2.0
         self.posz_kd = 2 * 1.0 * np.sqrt(self.pos_kp)
         self.pos_kp_mat = np.diag(np.array([self.pos_kp, self.pos_kp, self.posz_kp]))
         self.pos_kd_mat = np.diag(np.array([self.pos_kd, self.pos_kd, self.posz_kd]))
@@ -50,7 +50,7 @@ class SE3Control(object):
         self.att_rollpitch_kd = 2 * 1.0 * np.sqrt(self.att_rollpitch_kp)
         self.att_yaw_kp = 20
         self.att_yaw_kd = 2 * 1.15 * np.sqrt(self.att_yaw_kp)
-        self.geo_rollpitch_kp = 1000
+        self.geo_rollpitch_kp = 100
         self.geo_rollpitch_kd = 2 * 1.0 * np.sqrt(self.geo_rollpitch_kp)
         self.geo_yaw_kp = 50
         self.geo_yaw_kd = 2 * 1.15 * np.sqrt(self.geo_yaw_kp)

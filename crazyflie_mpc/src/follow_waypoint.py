@@ -2,9 +2,6 @@
 import numpy as np
 import rospy
 import tf2_ros as tf
-#from tf.transformations import euler_from_quaternion
-#from tf.transformations import quaternion_matrix
-#from tf.transformations import euler_from_matrix
 #from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import TwistStamped
@@ -16,8 +13,8 @@ from std_msgs.msg import String
 
 from scipy.spatial.transform import Rotation
 import waypoint_traj as wt
-from mpc_control import MPControl
-#from se3_control import SE3Control
+#from mpc_control import MPControl
+from se3_control import SE3Control
 
 
 class MPCDemo():
@@ -31,8 +28,8 @@ class MPCDemo():
         self.tf_listener = TransformListener()
         
         self.rate = rospy.Rate(200)
-        #self.est_vel_pub = rospy.Publisher('est_vel', TwistStamped, queue_size=1)
-        #self.u_pub = rospy.Publisher('u_euler', TwistStamped, queue_size=1)
+        self.est_vel_pub = rospy.Publisher('est_vel', TwistStamped, queue_size=1)
+        self.u_pub = rospy.Publisher('u_euler', TwistStamped, queue_size=1)
 
         self.angular_vel = np.zeros([3,])
         self.imu_sub = rospy.Subscriber('/crazyflie/imu', Imu, self.imu_callback)

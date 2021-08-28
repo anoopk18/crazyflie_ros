@@ -43,14 +43,14 @@ class MPControl(object):
         u = MX.sym('u', self.num_inputs, 1)
 
         # These settings are for the kinematic model
-        sampling_rate = 0.2
-        self.N_ctrl = 4  # Control horizon (in number of timesteps)
+        sampling_rate   = 0.2
+        self.N_ctrl     = 4  # Control horizon (in number of timesteps)
 
         # Kinematic model
-        xdot = vertcat(x[3], x[4], x[5])
-        xdotdot = u  # Notice that there are no gravity term here
-        ode = vertcat(xdot, xdotdot)
-        f = Function('f', [x, u], [ode])
+        xdot            = vertcat(x[3], x[4], x[5])
+        xdotdot         = u  # Notice that there are no gravity term here
+        ode             = vertcat(xdot, xdotdot)
+        f               = Function('f', [x, u], [ode])
 
         dae = {'x': x, 'p': u, 'ode': f(x, u)}
         options = dict(tf=sampling_rate, simplify=True, number_of_finite_elements=4)
@@ -63,16 +63,16 @@ class MPControl(object):
 
     def update(self, t, state, flat_output):
         # State information
-        pos = state['x']
-        vel = state['v']
-        quats = state['q']
-        rates = state['w']
+        pos     = state['x']
+        vel     = state['v']
+        quats   = state['q']
+        rates   = state['w']
         pos_des = flat_output['x']
         vel_des = flat_output['x_dot']
         yaw_des = flat_output['yaw']
 
         # MPC
-        if self.downsample_cnt % 100 == 0:
+        if self.downsample_cnt % 40 == 0: # This assumes update() to be called at 200Hz
             opti = casadi.Opti()
             x = opti.variable(self.num_states, self.N_ctrl + 1)  # States
             u = opti.variable(self.num_inputs, self.N_ctrl)  # Control input

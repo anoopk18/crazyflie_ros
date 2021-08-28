@@ -153,5 +153,5 @@ class MPControl(object):
                          'cmd_thrust': map_thrust(cmd_thrust),
                          'cmd_moment': cmd_moment,
                          'cmd_quat': cmd_quat,
-                         'r_ddot_des': np.zeros((3,))}
+                         'r_ddot_des': self.r_ddot_des}
         return control_input

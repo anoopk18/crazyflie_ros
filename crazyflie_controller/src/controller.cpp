@@ -146,7 +146,7 @@ private:
             {
                 tf::StampedTransform transform;
                 m_listener.lookupTransform(m_worldFrame, m_frame, ros::Time(0), transform);
-                ROS_INFO_STREAM("\ncurrent z is: " << transform.getOrigin().z());
+                //ROS_INFO_STREAM("\ncurrent z is: " << transform.getOrigin().z());
                 if (transform.getOrigin().z() > m_startZ + 0.1 || m_thrust > 50000)
                 {
                     ROS_INFO_STREAM("in here, setting state to auto");
@@ -277,7 +277,7 @@ int main(int argc, char **argv)
   std::string frame;
   n.getParam("frame", frame);
   double frequency;
-  n.param("frequency", frequency, 50.0);
+  n.param("frequency", frequency, 200.0);
 
   Controller controller(worldFrame, frame, n);
   controller.run(frequency);

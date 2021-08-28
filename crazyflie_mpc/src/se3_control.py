@@ -109,7 +109,7 @@ class SE3Control(object):
             m = 50000/0.575
             c = 10000
             mapped_thrust = thrust*m + c
-            return thrust
+            return mapped_thrust
             
         # Geometric nonlinear controller
         f_des       = self.mass * r_ddot_des + np.array([0, 0, self.mass * self.g])

@@ -15,7 +15,8 @@ from std_msgs.msg import String
 
 from scipy.spatial.transform import Rotation
 import waypoint_traj as wt
-import mpc_control as mc
+from mpc_control import MPControl
+from se3_control import SE3Control
 
 
 class MPCDemo():
@@ -28,16 +29,19 @@ class MPCDemo():
         self.frame = rospy.get_param("~frame")
         self.tf_listener = TransformListener()
         
-        self.rate = rospy.Rate(50)
+        self.rate = rospy.Rate(200)
         self.pubGoal = rospy.Publisher('goal', PoseStamped, queue_size=1)
+        self.angular_vel = np.zeros([3,])
         self.imu_sub = rospy.Subscriber('/crazyflie/imu', Imu, self.imu_callback)
         self.pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)
         self.m_state = 1 # Idle: 0, Automatic: 1, TakingOff: 2, Landing: 3
         self.points = np.array([[0.0, 0.0, 0.0],
                                 [0.0, 0.0, 0.4]])
         self.traj = self.generate_traj()
-        print("traj x dim", self.traj.update(0.1)['x'].shape )
-        self.controller = mc.MPControl()
+        #print("traj x dim", self.traj.update(0.1)['x'].shape )
+        
+        self.controller = MPControl()
+        
         self.initial_state = {'x': np.array([0, 0, 0]), # positions
                               'v': np.array([0, 0, 0]), # velocities
                               'q': np.array([0, 0, 0, 1]), # quaternion
@@ -45,7 +49,6 @@ class MPCDemo():
         self.t0 = rospy.get_time()
         self.prev_time = rospy.get_time()
         self.prev_pos = self.initial_state['x']
-        self.angular_vel = np.zeros([3,])
     
     def imu_callback(self, data):
         imu_angular_vel = Vector3()
@@ -123,7 +126,7 @@ class MPCDemo():
         #print("euler diff: \n", euler - euler_scipy)
                 
 
-        print("getting angular:\n", self.angular_vel)
+        #print("getting angular:\n", self.angular_vel)
         curr_state = {
                     'x': np.array(pos),
                     'v': v,

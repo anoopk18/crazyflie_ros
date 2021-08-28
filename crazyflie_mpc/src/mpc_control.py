@@ -110,7 +110,7 @@ class MPControl(object):
             m = 50000/0.575
             c = 10000
             mapped_thrust = thrust*m + c
-            return thrust
+            return mapped_thrust
 
         # Geometric nonlinear controller
         r = Rotation.from_quat(quats)

@@ -2,10 +2,10 @@
 import numpy as np
 import rospy
 import tf2_ros as tf
-from tf.transformations import euler_from_quaternion
-from tf.transformations import quaternion_matrix
-from tf.transformations import euler_from_matrix
-from geometry_msgs.msg import PoseStamped
+#from tf.transformations import euler_from_quaternion
+#from tf.transformations import quaternion_matrix
+#from tf.transformations import euler_from_matrix
+#from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import TwistStamped
 from geometry_msgs.msg import TransformStamped
@@ -17,7 +17,7 @@ from std_msgs.msg import String
 from scipy.spatial.transform import Rotation
 import waypoint_traj as wt
 from mpc_control import MPControl
-from se3_control import SE3Control
+#from se3_control import SE3Control
 
 
 class MPCDemo():
@@ -31,15 +31,16 @@ class MPCDemo():
         self.tf_listener = TransformListener()
         
         self.rate = rospy.Rate(200)
-        self.est_vel_pub = rospy.Publisher('est_vel', TwistStamped, queue_size=1)
-        self.u_pub = rospy.Publisher('u_euler', TwistStamped, queue_size=1)
+        #self.est_vel_pub = rospy.Publisher('est_vel', TwistStamped, queue_size=1)
+        #self.u_pub = rospy.Publisher('u_euler', TwistStamped, queue_size=1)
 
         self.angular_vel = np.zeros([3,])
         self.imu_sub = rospy.Subscriber('/crazyflie/imu', Imu, self.imu_callback)
         self.pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)
         self.m_state = 1 # Idle: 0, Automatic: 1, TakingOff: 2, Landing: 3
-        self.points = np.array([[0.0, 0.0, 0.0],
-                                [0.0, 0.0, 0.4]])
+        self.points = np.array([[-1.409, 2.826, 0.0],
+                                [-1.409, 2.826, 0.4],
+                                [-1.409, 2.826, 0.0]])
         self.traj = self.generate_traj()
         #print("traj x dim", self.traj.update(0.1)['x'].shape )
         
@@ -98,8 +99,8 @@ class MPCDemo():
         est_v_msg.twist.linear.y = est_v[1]
         est_v_msg.twist.linear.z = est_v[2]
         
-        self.u_pub(u_msg)
-        self.est_vel_pub(est_v_msg)
+        self.u_pub.publish(u_msg)
+        self.est_vel_pub.publish(est_v_msg)
         
     
     def sanitize_trajectory_dic(self, trajectory_dic):
@@ -131,6 +132,7 @@ class MPCDemo():
                     'x': np.array(pos),
                     'v': v,
                     'q': np.array(quat),
+        #            'w': np.zeros((3,))}
                     'w': self.angular_vel}
  
         u = self.controller.update(curr_time, curr_state, flat)
@@ -138,9 +140,7 @@ class MPCDemo():
         pitch = u['euler'][1]
         yaw = u['euler'][2]
         thrust = u['cmd_thrust']
-        r_ddot_des = u['r_ddot_des']
-
-        self.log_ros_info(roll, pitch, yaw, r_ddot_des, v)
+        #r_ddot_des = u['r_ddot_des']
 
         msg = Twist()
         msg.linear.x = roll
@@ -151,6 +151,8 @@ class MPCDemo():
 
         self.prev_time = curr_time
         self.prev_pos = pos
+        
+        #self.log_ros_info(roll, pitch, yaw, r_ddot_des, v)
 
     def idle(self):
         rospy.loginfo("idling")     
@@ -160,7 +162,7 @@ class MPCDemo():
 
 
     def run(self):
-        while not rospy.is_shutdown():
+        while(1):
             if self.m_state == 0:
                 self.idle()
             
@@ -180,4 +182,5 @@ class MPCDemo():
 if __name__ == '__main__':
     mpc_demo = MPCDemo()
     mpc_demo.run()
+    rospy.spin()
         

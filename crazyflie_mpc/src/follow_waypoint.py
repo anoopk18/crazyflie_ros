@@ -7,6 +7,7 @@ from tf.transformations import quaternion_matrix
 from tf.transformations import euler_from_matrix
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Twist
+from geometry_msgs.msg import TwistStamped
 from geometry_msgs.msg import TransformStamped
 from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import Imu
@@ -30,7 +31,9 @@ class MPCDemo():
         self.tf_listener = TransformListener()
         
         self.rate = rospy.Rate(200)
-        self.pubGoal = rospy.Publisher('goal', PoseStamped, queue_size=1)
+        self.est_vel_pub = rospy.Publisher('est_vel', TwistStamped, queue_size=1)
+        self.u_pub = rospy.Publisher('u_euler', TwistStamped, queue_size=1)
+
         self.angular_vel = np.zeros([3,])
         self.imu_sub = rospy.Subscriber('/crazyflie/imu', Imu, self.imu_callback)
         self.pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)
@@ -77,7 +80,27 @@ class MPCDemo():
             self.m_state = 0
             msg = Twist()
             self.pub.publish(msg)
-
+    
+    def log_ros_info(self, roll, pitch, yaw, r_ddot_des, est_v):
+        # logging controller outputs
+        u_msg = TwistStamped()
+        u_msg.header.stamp = rospy.Time.now()
+        u_msg.twist.angular.x = roll
+        u_msg.twist.angular.y = pitch
+        u_msg.twist.angular.z = yaw
+        u_msg.twist.linear.x = r_ddot_des[0]
+        u_msg.twist.linear.y = r_ddot_des[1]
+        u_msg.twist.linear.z = r_ddot_des[2]
+        # logging estimate velocities
+        est_v_msg = TwistStamped()
+        est_v_msg.header.stamp = rospy.Time.now()
+        est_v_msg.twist.linear.x = est_v[0]
+        est_v_msg.twist.linear.y = est_v[1]
+        est_v_msg.twist.linear.z = est_v[2]
+        
+        self.u_pub(u_msg)
+        self.est_vel_pub(est_v_msg)
+        
     
     def sanitize_trajectory_dic(self, trajectory_dic):
         """
@@ -104,29 +127,6 @@ class MPCDemo():
         (pos, quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, t)
         v = (np.array(pos)-np.array(self.prev_pos))/dt         
 
-        #targetWorld = PoseStamped()
-        #targetWorld.header.stamp = transform.header.stamp 
-        #targetWorld.header.frame_id = self.worldFrame
-        #targetWorld.pose = 
-        
-        #targetDrone = self.tf_listener.transformPose(self.frame, targetWorld)
-        
-        #quaternion = (
-        #        targetDrone.pose.orientation.x,
-        #        targetDrone.pose.orientation.y,
-        #        targetDrone.pose.orientation.z,
-        #        targetDrone.pose.orientation.w)
-        
-        # print("2 ========= quaternion of the drone is: \n", quat)
-        # print("3 ========= position of the drone is: \n", pos)
-        
-        #euler = euler_from_quaternion(quat)
-        #euler_scipy = Rotation.from_quat(quat).as_euler('xyz')
-        
-        #print("euler diff: \n", euler - euler_scipy)
-                
-
-        #print("getting angular:\n", self.angular_vel)
         curr_state = {
                     'x': np.array(pos),
                     'v': v,
@@ -138,6 +138,9 @@ class MPCDemo():
         pitch = u['euler'][1]
         yaw = u['euler'][2]
         thrust = u['cmd_thrust']
+        r_ddot_des = u['r_ddot_des']
+
+        self.log_ros_info(roll, pitch, yaw, r_ddot_des, v)
 
         msg = Twist()
         msg.linear.x = roll

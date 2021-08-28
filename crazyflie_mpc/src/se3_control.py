@@ -2,7 +2,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 from casadi import *
 from scipy.signal import chirp
-
+from tf.transformations import euler_from_matrix
 
 
 class SE3Control(object):
@@ -25,15 +25,15 @@ class SE3Control(object):
         """
 
         # Quadrotor physical parameters.
-        self.mass            = quad_params['mass'] # kg
-        self.Ixx             = quad_params['Ixx']  # kg*m^2
-        self.Iyy             = quad_params['Iyy']  # kg*m^2
-        self.Izz             = quad_params['Izz']  # kg*m^2
-        self.arm_length      = quad_params['arm_length'] # meters
-        self.rotor_speed_min = quad_params['rotor_speed_min'] # rad/s
-        self.rotor_speed_max = quad_params['rotor_speed_max'] # rad/s
-        self.k_thrust        = quad_params['k_thrust'] # N/(rad/s)**2
-        self.k_drag          = quad_params['k_drag']   # Nm/(rad/s)**2
+        self.mass = 0.03  # quad_params['mass'] # kg
+        self.Ixx = 1.43e-5  # quad_params['Ixx']  # kg*m^2
+        self.Iyy = 1.43e-5  # quad_params['Iyy']  # kg*m^2
+        self.Izz = 2.89e-5  # quad_params['Izz']  # kg*m^2
+        self.arm_length = 0.046  # quad_params['arm_length'] # meters
+        self.rotor_speed_min = 0  # quad_params['rotor_speed_min'] # rad/s
+        self.rotor_speed_max = 2500  # quad_params['rotor_speed_max'] # rad/s
+        self.k_thrust = 2.3e-08  # quad_params['k_thrust'] # N/(rad/s)**2
+        self.k_drag = 7.8e-11  # quad_params['k_drag']   # Nm/(rad/s)**2
 
         # You may define any additional constants you like including control gains.
         self.inertia        = np.diag(np.array([self.Ixx, self.Iyy, self.Izz])) # kg*m^2
@@ -105,6 +105,12 @@ class SE3Control(object):
         # Position controller
         r_ddot_des  = -(self.pos_kd_mat @ (vel - vel_des)) - (self.pos_kp_mat @ (pos - pos_des))
 
+        def map_thrust(thrust):
+            m = 50000/0.575
+            c = 10000
+            mapped_thrust = thrust*m + c
+            return thrust
+            
         # Geometric nonlinear controller
         f_des       = self.mass * r_ddot_des + np.array([0, 0, self.mass * self.g])
         f_des       = np.squeeze(f_des) # Need this line if using MPC to compute r_ddot_des
@@ -116,6 +122,7 @@ class SE3Control(object):
         rot_des     = np.squeeze(rot_des)
         err_mat     = 0.5 * (rot_des.T @ rot_mat - rot_mat.T @ rot_des)
         err_vec     = np.array([-err_mat[1, 2], err_mat[0, 2], -err_mat[0, 1]])
+        euler       = euler_from_matrix(rot_des) # euler angles from rotation matrix
 
         u1          = np.array([b3 @ f_des])
         u2          = self.inertia @ (-self.att_kp_mat @ err_vec - self.att_kd_mat @ rates)
@@ -176,9 +183,10 @@ class SE3Control(object):
         r               = Rotation.from_matrix(rot_des)
         cmd_q           = r.as_quat()
 
-        control_input = {'cmd_motor_speeds':cmd_motor_speeds,
-                         'cmd_thrust':cmd_thrust,
+        control_input = {'euler': euler,
+                         'cmd_motor_speeds':cmd_motor_speeds,
+                         'cmd_thrust':map_thrust(cmd_thrust),
                          'cmd_moment':cmd_moment,
-                         'cmd_q':cmd_q,
+                         'cmd_quat':cmd_q,
                          'r_ddot_des':r_ddot_des}
         return control_input

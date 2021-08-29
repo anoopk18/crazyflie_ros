@@ -2,9 +2,11 @@
 import numpy as np
 import rospy
 import tf2_ros as tf
+import time
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import TwistStamped
 from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import Imu
 from tf import TransformListener
@@ -13,12 +15,11 @@ from std_msgs.msg import String
 from scipy.spatial.transform import Rotation
 import waypoint_traj as wt
 from mpc_control import MPControl
-from geometric_control import GeometricControl
+from geometric_control import GeometriControl
 
 
 class MPCDemo():
     def __init__(self):
-        rospy.loginfo("Initializing MPC Demo")
         rospy.init_node('mpc_demo', anonymous=True)  # initializing node
         # self.m_serviceLand = rospy.Service('land', , self.landingService)
         # self.m_serviceTakeoff = rospy.Service('takeoff', , self.takeoffService)
@@ -30,20 +31,25 @@ class MPCDemo():
         # subscribers and publishers
         self.rate = rospy.Rate(200)
         self.angular_vel = np.zeros([3,])  # angular velocity updated by imu subscriber
+        self.curr_pos = np.zeros([3,])
+        self.curr_quat = np.zeros([4,])
         self.est_vel_pub = rospy.Publisher('est_vel', TwistStamped, queue_size=1)  # publishing estimated velocity
         self.u_pub = rospy.Publisher('u_euler', TwistStamped, queue_size=1)  # publishing stamped 
         self.cmd_stamped_pub = rospy.Publisher('cmd_vel_stamped', TwistStamped, queue_size=1)  # publishing time stamped cmd_vel
         self.imu_sub = rospy.Subscriber('/crazyflie/imu', Imu, self.imu_callback)  # subscribing imu
         self.cmd_pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)  # publishing to cmd_vel to control crazyflie
-        
+        self.goal_pub = rospy.Publisher('goal', TwistStamped, queue_size=1)  # publishing waypoints along the trajectory        
+        self.vicon_sub = rospy.Subscriber('/vicon/crazy_mpc/pose', PoseStamped, self.vicon_callback) 
+        self.tf_pub = rospy.Publisher('tf_pos', PoseStamped, queue_size=1)
+ 
         # controller and waypoints
-        self.m_state = 1 # Idle: 0, Automatic: 1, TakingOff: 2, Landing: 3
-        #points = np.array([[-1.409, 2.826, 0.0],  # points for generating trajectory
-        #                   [-1.409, 2.826, 0.4],
-        #                   [-1.409, 2.826, 0.0]])
-        points = np.array([[0.,0.,0.],
-                           [0.,0.,0.4],
-                           [0.,0.,0.]])
+        self.m_state = 0 # Idle: 0, Automatic: 1, TakingOff: 2, Landing: 3
+        points = np.array([[-1.409, 2.826, 0.0],  # points for generating trajectory
+                           [-1.409, 2.826, 0.4],
+                           [-1.409, 2.826, 0.0]])
+        #points = np.array([[0.,-2.,0.],
+        #                   [0.,-2.,0.4],
+        #                   [0.,-2.,0.]])
         self.traj = self.generate_traj(points)  # trajectory
         
         self.controller = GeometriControl()  # controller
@@ -55,6 +61,8 @@ class MPCDemo():
         self.t0 = rospy.get_time()
         self.prev_time = rospy.get_time()
         self.prev_pos = self.initial_state['x']
+        self.prev_vel = np.zeros([3,])
+        rospy.loginfo("=============== MPC Demo Initialized ===============")
     
     def imu_callback(self, data):
         '''
@@ -65,6 +73,15 @@ class MPCDemo():
         self.angular_vel[0] = imu_angular_vel.x
         self.angular_vel[1] = imu_angular_vel.y
         self.angular_vel[2] = imu_angular_vel.z
+
+    def vicon_callback(self, data):
+        self.curr_pos[0] = data.pose.position.x
+        self.curr_pos[1] = data.pose.position.y
+        self.curr_pos[2] = data.pose.position.z
+        self.curr_quat[0] = data.pose.orientation.x
+        self.curr_quat[1] = data.pose.orientation.y
+        self.curr_quat[2] = data.pose.orientation.z
+        self.curr_quat[3] = data.pose.orientation.w
 
     def takingoffService(self, req):
         pass
@@ -85,13 +102,14 @@ class MPCDemo():
             msg = Twist()
             self.cmd_pub.publish(msg)
     
-    def log_ros_info(self, roll, pitch, yaw, r_ddot_des, est_v, cmd_msg):
+    def log_ros_info(self, roll, pitch, yaw, r_ddot_des, est_v, cmd_msg, flat, tf_pos, tf_quat):
         '''
         logging information from this demo
         '''
         # logging controller outputs
+        curr_log_time = rospy.Time.now()
         u_msg = TwistStamped()
-        u_msg.header.stamp = rospy.Time.now()
+        u_msg.header.stamp = curr_log_time
         # roll, pitch, and yaw are mapped to TwistStamped angular
         u_msg.twist.angular.x = roll          
         u_msg.twist.angular.y = pitch
@@ -103,7 +121,7 @@ class MPCDemo():
         
         # logging estimate velocities
         est_v_msg = TwistStamped()
-        est_v_msg.header.stamp = rospy.Time.now()
+        est_v_msg.header.stamp = curr_log_time
         # estimated velocities are mapped to TwistStampedow()
         est_v_msg.twist.linear.x = est_v[0]  
         est_v_msg.twist.linear.y = est_v[1]
@@ -111,16 +129,39 @@ class MPCDemo():
         
         # logging time stamped cmd_vel
         cmd_stamped_msg = TwistStamped()
-        cmd_stamped_msg.header.stamp = rospy.Time.now()
+        cmd_stamped_msg.header.stamp = curr_log_time
         cmd_stamped_msg.twist.linear.x = cmd_msg.linear.x
         cmd_stamped_msg.twist.linear.y = cmd_msg.linear.y
         cmd_stamped_msg.twist.linear.z = cmd_msg.linear.z
         cmd_stamped_msg.twist.angular.z = cmd_msg.angular.z
 
+        # logging waypoints
+        traj_msg = TwistStamped()
+        traj_msg.header.stamp = curr_log_time
+        traj_msg.twist.linear.x = flat['x'][0]
+        traj_msg.twist.linear.y = flat['x'][1]
+        traj_msg.twist.linear.z = flat['x'][2]
+        traj_msg.twist.angular.x = flat['x_dot'][0]
+        traj_msg.twist.angular.y = flat['x_dot'][1]
+        traj_msg.twist.angular.z = flat['x_dot'][2]
+
+        # logging position from tf
+        tf_pose_msg = PoseStamped()
+        tf_pose_msg.header.stamp = curr_log_time
+        tf_pose_msg.pose.position.x = tf_pos[0]
+        tf_pose_msg.pose.position.y = tf_pos[1]
+        tf_pose_msg.pose.position.z = tf_pos[2]
+        tf_pose_msg.pose.orientation.x = tf_quat[0]
+        tf_pose_msg.pose.orientation.y = tf_quat[1]
+        tf_pose_msg.pose.orientation.z = tf_quat[2]
+        tf_pose_msg.pose.orientation.w = tf_quat[3]
+
         # publishing the messages
         self.u_pub.publish(u_msg)
         self.est_vel_pub.publish(est_v_msg)
         self.cmd_stamped_pub.publish(cmd_stamped_msg)
+        self.goal_pub.publish(traj_msg)
+        self.tf_pub.publish(tf_pose_msg)
         
     
     def sanitize_trajectory_dic(self, trajectory_dic):
@@ -143,9 +184,19 @@ class MPCDemo():
         transform = TransformStamped()  # for getting transforms
         self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
         t = self.tf_listener.getLatestCommonTime(self.frame, self.worldFrame)
-        (pos, quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, t)  # position and quaternion in world frame
-        v = (np.array(pos)-np.array(self.prev_pos))/dt  # velocity estimate
+        (tf_pos, tf_quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, t)  # position and quaternion in world frame
+        vicon_pos = self.curr_pos
+        vicon_quat = self.curr_quat
+        pos = tf_pos
+        quat = tf_quat
 
+        v = (np.array(pos)-np.array(self.prev_pos))/dt  # velocity estimate
+        #print("prev pos\n", self.prev_pos) 
+        v_est_sum = np.sum(v)
+        if v_est_sum == 0.0:
+            v = self.prev_vel
+        
+        #print(v)
         curr_state = {
                     'x': np.array(pos),
                     'v': v,
@@ -168,19 +219,23 @@ class MPCDemo():
         msg.angular.z = 0 # hardcoding yawrate to be 0 for now
         self.cmd_pub.publish(msg) # publishing msg to the crazyflie
 
-        self.prev_time = curr_time
-        self.prev_pos = pos
-        self.log_ros_info(roll, pitch, yaw, r_ddot_des, v, msg)
+        self.log_ros_info(roll, pitch, yaw, r_ddot_des, v, msg, flat, tf_pos, tf_quat)
+        if v_est_sum != 0:
+            self.prev_vel = v
+            self.prev_time = curr_time
+            self.prev_pos = pos
 
     def idle(self):
-        rospy.loginfo("idling")     
-        msg = Twist()
-        self.cmd_pub.publish(msg)
-        self.m_state = 3
+        while rospy.get_time() - self.t0 <= 5.:
+            msg = Twist()
+            self.cmd_pub.publish(msg)
+        
+        self.m_state = 1
+        self.t0 = rospy.get_time()
 
 
     def run(self):
-        while(1):
+        while not rospy.is_shutdown():
             if self.m_state == 0:
                 self.idle()
             
@@ -193,7 +248,7 @@ class MPCDemo():
             elif self.m_state == 2:
                 self.takingoff()
             
-            self.rate.sleep()
+            #self.rate.sleep()
             
 
 if __name__ == '__main__':

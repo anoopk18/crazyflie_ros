@@ -20,9 +20,9 @@ class GeometriControl(object):
         self.g              = 9.81 # m/s^2
 
         # STUDENT CODE HERE
-        self.pos_kp = 15.0
+        self.pos_kp = 25.0
         self.pos_kd = 2 * 1.0 * np.sqrt(self.pos_kp)
-        self.posz_kp = 15.0
+        self.posz_kp = 25.0
         self.posz_kd = 2 * 1.0 * np.sqrt(self.pos_kp)
         self.pos_kp_mat = np.diag(np.array([self.pos_kp, self.pos_kp, self.posz_kp]))
         self.pos_kd_mat = np.diag(np.array([self.pos_kd, self.pos_kd, self.posz_kd]))
@@ -30,7 +30,7 @@ class GeometriControl(object):
         self.att_rollpitch_kd = 2 * 1.0 * np.sqrt(self.att_rollpitch_kp)
         self.att_yaw_kp = 20
         self.att_yaw_kd = 2 * 1.15 * np.sqrt(self.att_yaw_kp)
-        self.geo_rollpitch_kp = 100
+        self.geo_rollpitch_kp = 2000
         self.geo_rollpitch_kd = 2 * 1.0 * np.sqrt(self.geo_rollpitch_kp)
         self.geo_yaw_kp = 50
         self.geo_yaw_kd = 2 * 1.15 * np.sqrt(self.geo_yaw_kp)
@@ -86,7 +86,7 @@ class GeometriControl(object):
 
         def map_thrust(thrust):
             m = 50000/0.575
-            c = 10000
+            c = 13000
             mapped_thrust = thrust*m + c
             return mapped_thrust
             

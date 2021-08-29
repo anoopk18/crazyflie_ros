@@ -44,7 +44,7 @@ class MPCDemo():
  
         # controller and waypoints
         self.m_state = 0 # Idle: 0, Automatic: 1, TakingOff: 2, Landing: 3
-        points = np.array([[-1.409, 2.826, 0.0],  # points for generating trajectory
+        points = np.array([  # points for generating trajectory
                            [-1.409, 2.826, 0.4],
                            [-1.409, 2.826, 0.0]])
         #points = np.array([[0.,-2.,0.],
@@ -213,8 +213,8 @@ class MPCDemo():
 
         # publish command
         msg = Twist()
-        msg.linear.x = roll
-        msg.linear.y = pitch
+        msg.linear.x = pitch
+        msg.linear.y = roll
         msg.linear.z = thrust
         msg.angular.z = 0 # hardcoding yawrate to be 0 for now
         self.cmd_pub.publish(msg) # publishing msg to the crazyflie

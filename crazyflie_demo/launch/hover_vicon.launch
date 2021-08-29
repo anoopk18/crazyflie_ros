@@ -3,8 +3,8 @@
   <arg name="uri" default="radio://0/80/2M" />
   <arg name="frame" default="/crazy_mpc" />
   <arg name="joy_dev" default="/dev/input/js0" />
-  <arg name="x" default="0.0" />
-  <arg name="y" default="0.0" />
+  <arg name="x" default="-1.409" />
+  <arg name="y" default="2.826" />
   <arg name="z" default="0.5" />
 
   <include file="$(find crazyflie_driver)/launch/crazyflie_server.launch">

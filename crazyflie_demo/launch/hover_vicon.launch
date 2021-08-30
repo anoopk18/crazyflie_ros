@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <launch>
   <arg name="uri" default="radio://0/80/2M" />
-  <arg name="frame" default="/crazy_hands" />
+  <arg name="frame" default="/crazy_mpc" />
   <arg name="joy_dev" default="/dev/input/js0" />
   <arg name="x" default="-1.409" />
   <arg name="y" default="2.826" />

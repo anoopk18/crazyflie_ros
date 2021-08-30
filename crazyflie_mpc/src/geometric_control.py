@@ -20,10 +20,10 @@ class GeometriControl(object):
         self.g              = 9.81 # m/s^2
 
         # STUDENT CODE HERE
-        self.pos_kp = 0
+        self.pos_kp = 2.0
         self.pos_kd = 2 * 1.0 * np.sqrt(self.pos_kp)
-        self.posz_kp = 5.0
-        self.posz_kd = 2 * 1.0 * np.sqrt(self.pos_kp)
+        self.posz_kp = 4.0
+        self.posz_kd = 2.4  #2 * 1.2 * np.sqrt(self.pos_kp)
         self.pos_kp_mat = np.diag(np.array([self.pos_kp, self.pos_kp, self.posz_kp]))
         self.pos_kd_mat = np.diag(np.array([self.pos_kd, self.pos_kd, self.posz_kd]))
         self.att_rollpitch_kp = 9
@@ -84,23 +84,6 @@ class GeometriControl(object):
         # Position controller
         r_ddot_des  = -(self.pos_kd_mat @ (vel - vel_des)) - (self.pos_kp_mat @ (pos - pos_des))
 
-        def map_thrust(thrust):
-            m = 50000/0.575
-            c = 16000
-            mapped_thrust = thrust*m + c
-            return mapped_thrust
-
-        def map_u1(u1):
-            # u1 ranges from -0.2 to 0.2
-            trim_cmd = 38000
-            max_cmd = 50000
-            u1_max = 0.2
-            c = trim_cmd
-            m = (max_cmd - trim_cmd)/u1_max
-            mapped_u1 = u1*m + c
-            if mapped_u1 > 50000:
-                mapped_u1 = 50000
-            return mapped_u1
             
             
         # Geometric nonlinear controller
@@ -178,7 +161,7 @@ class GeometriControl(object):
         control_input = {'euler': euler,
                          'u1' : u1,
                          'cmd_motor_speeds':cmd_motor_speeds,
-                         'cmd_thrust':map_u1(u1),
+                         'cmd_thrust':u1,
                          'cmd_moment':cmd_moment,
                          'cmd_quat':cmd_q,
                          'r_ddot_des':r_ddot_des}

@@ -48,9 +48,12 @@ class MPCDemo():
         self.m_thrust = 0
         self.m_startZ = 0
         points = np.array([  # points for generating trajectory
-                           [-1.409, 2.826, 0.4],
-                           [-1.409, 3.826, 0.4],
-                           [-1.409, 2.826, 0.4],
+                           [-1.409, 2.826, 0.55],
+                           [1.609, 2.826, 0.55],
+                           [1.609, 5.826, 0.55],
+                           [-1.409, 5.826, 0.55],
+                           [-1.409, 2.826, 0.55],
+                           [-1.409, 2.856, 0.3],
                            [-1.409, 2.826, 0.0]])
         #points = np.array([[0.,-2.,0.],
         #                   [0.,-2.,0.4],
@@ -160,12 +163,26 @@ class MPCDemo():
         r_ddot_des = u['r_ddot_des']
         u1 = u['u1']
 
+  
+        def map_u1(u1):
+            # u1 ranges from -0.2 to 0.2
+            trim_cmd = 42000
+            min_cmd = 10000
+            u1_trim = 0.327
+            c = min_cmd
+            m = (trim_cmd - min_cmd)/u1_trim
+            mapped_u1 = u1*m + c
+            if mapped_u1 > 60000:
+                mapped_u1 = 60000
+            return mapped_u1
+
+
         # publish command
         msg = Twist()
-        msg.linear.x = np.clip(np.degrees(pitch), -10., 10.)
-        msg.linear.y = np.clip(np.degrees(roll), -10., 10.)
-        msg.linear.z = thrust
-        msg.angular.z = np.degrees(0) # hardcoding yawrate to be 0 for now
+        msg.linear.x = np.clip(np.degrees(pitch), -10., 10.)  # pitch
+        msg.linear.y = np.clip(np.degrees(roll), -10., 10.)  # roll
+        msg.linear.z = map_u1(thrust)
+        msg.angular.z = np.degrees(0.) # hardcoding yawrate to be 0 for now
         self.cmd_pub.publish(msg) # publishing msg to the crazyflie
 
         self.log_ros_info(roll, pitch, yaw, r_ddot_des, v, msg, flat, tf_pos, tf_quat, u1)

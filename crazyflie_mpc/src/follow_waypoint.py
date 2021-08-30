@@ -47,14 +47,25 @@ class MPCDemo():
         self.m_state = 0 # Idle: 0, Automatic: 1, TakingOff: 2, Landing: 3
         self.m_thrust = 0
         self.m_startZ = 0
-        points = np.array([  # points for generating trajectory
-                           [-1.409, 2.826, 0.55],
-                           [1.609, 2.826, 0.55],
-                           [1.609, 5.826, 0.55],
-                           [-1.409, 5.826, 0.55],
-                           [-1.409, 2.826, 0.55],
-                           [-1.409, 2.826, 0.3],
-                           [-1.409, 2.826, 0.0]])
+        
+        t_final = 10
+        radius = 0.5
+        t_plot = np.linspace(0, t_final, num=500)
+        # circle center of the circle is 0.2172, 4.5455
+        x_traj = radius * np.cos(t_plot) + 0.2172
+        y_traj = radius * np.sin(t_plot) + 4.5455
+  
+        z_traj = np.zeros((len(t_plot),)) + 0.55
+        points = np.stack((x_traj, y_traj, z_traj), axis=1)
+
+        #points = np.array([  # points for generating trajectory
+        #                   [-1.409, 2.826, 0.55],
+        #                   [1.609, 2.826, 0.55],
+        #                   [1.609, 5.826, 0.55],
+        #                   [-1.409, 5.826, 0.55],
+        #                   [-1.409, 2.826, 0.55],
+        #                   [-1.409, 2.826, 0.3],
+        #                   [-1.409, 2.826, 0.0]])
         #points = np.array([[0.,-2.,0.],
         #                   [0.,-2.,0.4],
         #                   [0.,-2.,0.]])

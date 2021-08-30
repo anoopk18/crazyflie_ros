@@ -159,9 +159,8 @@ class GeometriControl(object):
 
         self.forces_old     = forces
         control_input = {'euler': euler,
-                         'u1' : u1,
+                         'cmd_thrust' : u1,
                          'cmd_motor_speeds':cmd_motor_speeds,
-                         'cmd_thrust':u1,
                          'cmd_moment':cmd_moment,
                          'cmd_quat':cmd_q,
                          'r_ddot_des':r_ddot_des}

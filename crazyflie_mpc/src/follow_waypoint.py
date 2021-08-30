@@ -53,14 +53,14 @@ class MPCDemo():
                            [1.609, 5.826, 0.55],
                            [-1.409, 5.826, 0.55],
                            [-1.409, 2.826, 0.55],
-                           [-1.409, 2.856, 0.3],
+                           [-1.409, 2.826, 0.3],
                            [-1.409, 2.826, 0.0]])
         #points = np.array([[0.,-2.,0.],
         #                   [0.,-2.,0.4],
         #                   [0.,-2.,0.]])
         self.traj = self.generate_traj(points)  # trajectory
         
-        self.controller = GeometriControl()  # controller
+        self.controller = MPControl()  # controller
         
         self.initial_state = {'x': np.array([0, 0, 0]), # positions
                               'v': np.array([0, 0, 0]), # velocities
@@ -161,7 +161,7 @@ class MPCDemo():
         yaw = u['euler'][2]
         thrust = u['cmd_thrust']
         r_ddot_des = u['r_ddot_des']
-        u1 = u['u1']
+        u1 = u['cmd_thrust']
 
   
         def map_u1(u1):

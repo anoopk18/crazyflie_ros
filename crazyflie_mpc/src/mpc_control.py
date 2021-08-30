@@ -19,8 +19,8 @@ class MPControl(object):
         self.inertia = np.diag(np.array([self.Ixx, self.Iyy, self.Izz]))  # kg*m^2
         self.g = 9.81  # m/s^2
         
-        self.geo_rollpitch_kp = 100
-        self.geo_rollpitch_kd = 2 * 0.8 * np.sqrt(self.geo_rollpitch_kp)
+        self.geo_rollpitch_kp = 10
+        self.geo_rollpitch_kd = 2 * 1.0 * np.sqrt(self.geo_rollpitch_kp)
         self.geo_yaw_kp = 50
         self.geo_yaw_kd = 2 * 1.15 * np.sqrt(self.geo_yaw_kp)
         self.att_kp_mat = np.diag(np.array([self.geo_rollpitch_kp, self.geo_rollpitch_kp, self.geo_yaw_kp]))
@@ -44,7 +44,7 @@ class MPControl(object):
 
         # These settings are for the kinematic model
         sampling_rate   = 0.2
-        self.N_ctrl     = 4  # Control horizon (in number of timesteps)
+        self.N_ctrl     = 3  # Control horizon (in number of timesteps)
 
         # Kinematic model
         xdot            = vertcat(x[3], x[4], x[5])
@@ -72,7 +72,7 @@ class MPControl(object):
         yaw_des = flat_output['yaw']
 
         # MPC
-        if self.downsample_cnt % 40 == 0: # This assumes update() to be called at 200Hz
+        if self.downsample_cnt % 50 == 0: # This assumes update() to be called at 200Hz
             opti = casadi.Opti()
             x = opti.variable(self.num_states, self.N_ctrl + 1)  # States
             u = opti.variable(self.num_inputs, self.N_ctrl)  # Control input
@@ -81,7 +81,9 @@ class MPControl(object):
             state_des = vertcat(pos_des, vel_des)
             umax = np.array([15, 15, 15])
             # opti.minimize(1.0 * sumsqr(x[0:3, :] - pos_des) + 0.05 * sumsqr(x[3:, :] - vel_des) + 0.007 * sumsqr(u))
-            opti.minimize(0.25 * sumsqr(x[0:3, :] - pos_des) + 0.25 * sumsqr(x[3:, :] - vel_des) + 0.05 * sumsqr(u))
+            opti.minimize(1. * sumsqr(x[0:2, :] - pos_des[0:2]) + \
+                          2. * sumsqr(x[2, :] - pos_des[2]) + \
+                          0.25 * sumsqr(x[3:, :] - vel_des) + 0.05 * sumsqr(u))
 
             for k in range(self.N_ctrl):
                 opti.subject_to(x[:, k + 1] == self.Dynamics(x[:, k], u[:, k]))  # Dynamics constraints
@@ -100,18 +102,6 @@ class MPControl(object):
         self.downsample_cnt += 1
 
         # Position controller
-        #def rot2eul(R):
-        #    beta = -np.arcsin(R[2, 0])
-        #    alpha = np.arctan2(R[2, 1] / np.cos(beta), R[2, 2] / np.cos(beta))
-        #    gamma = np.arctan2(R[1, 0] / np.cos(beta), R[0, 0] / np.cos(beta))
-        #    return np.array((alpha, beta, gamma))
-
-        def map_thrust(thrust):
-            m = 50000/0.575
-            c = 13000
-            mapped_thrust = thrust*m + c
-            return mapped_thrust
-
         # Geometric nonlinear controller
         r = Rotation.from_quat(quats)
         rot_mat = r.as_matrix()
@@ -149,8 +139,8 @@ class MPControl(object):
         cmd_quat = r.as_quat()
 
         control_input = {'euler': euler,
+                         'cmd_thrust': u1,
                          'cmd_motor_speeds': cmd_motor_speeds,
-                         'cmd_thrust': map_thrust(cmd_thrust),
                          'cmd_moment': cmd_moment,
                          'cmd_quat': cmd_quat,
                          'r_ddot_des': self.r_ddot_des}

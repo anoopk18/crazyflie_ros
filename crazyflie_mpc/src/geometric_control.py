@@ -20,17 +20,17 @@ class GeometriControl(object):
         self.g              = 9.81 # m/s^2
 
         # STUDENT CODE HERE
-        self.pos_kp = 25.0
+        self.pos_kp = 0
         self.pos_kd = 2 * 1.0 * np.sqrt(self.pos_kp)
-        self.posz_kp = 25.0
+        self.posz_kp = 5.0
         self.posz_kd = 2 * 1.0 * np.sqrt(self.pos_kp)
         self.pos_kp_mat = np.diag(np.array([self.pos_kp, self.pos_kp, self.posz_kp]))
         self.pos_kd_mat = np.diag(np.array([self.pos_kd, self.pos_kd, self.posz_kd]))
-        self.att_rollpitch_kp = 500
+        self.att_rollpitch_kp = 9
         self.att_rollpitch_kd = 2 * 1.0 * np.sqrt(self.att_rollpitch_kp)
         self.att_yaw_kp = 20
         self.att_yaw_kd = 2 * 1.15 * np.sqrt(self.att_yaw_kp)
-        self.geo_rollpitch_kp = 2000
+        self.geo_rollpitch_kp = 10
         self.geo_rollpitch_kd = 2 * 1.0 * np.sqrt(self.geo_rollpitch_kp)
         self.geo_yaw_kp = 50
         self.geo_yaw_kd = 2 * 1.15 * np.sqrt(self.geo_yaw_kp)
@@ -60,7 +60,7 @@ class GeometriControl(object):
         rates       = state['w']
         pos_des     = flat_output['x']
         vel_des     = flat_output['x_dot']
-        yaw_des     = flat_output['yaw']
+        yaw_des     = 0.0 #flat_output['yaw']
 
         # Get rotation matrix, in quaternions
         r           = Rotation.from_quat(quats)
@@ -86,9 +86,22 @@ class GeometriControl(object):
 
         def map_thrust(thrust):
             m = 50000/0.575
-            c = 13000
+            c = 16000
             mapped_thrust = thrust*m + c
             return mapped_thrust
+
+        def map_u1(u1):
+            # u1 ranges from -0.2 to 0.2
+            trim_cmd = 38000
+            max_cmd = 50000
+            u1_max = 0.2
+            c = trim_cmd
+            m = (max_cmd - trim_cmd)/u1_max
+            mapped_u1 = u1*m + c
+            if mapped_u1 > 50000:
+                mapped_u1 = 50000
+            return mapped_u1
+            
             
         # Geometric nonlinear controller
         f_des       = self.mass * r_ddot_des + np.array([0, 0, self.mass * self.g])
@@ -126,30 +139,29 @@ class GeometriControl(object):
         #     self.cnt = 0
 
         # Making sure that yaw error stays within [-pi,pi)
-        # yaw_err = psi - yaw_des
-        # while yaw_err >= np.radians(180.0):
-        #     yaw_err -= np.radians(360.0)
-        # while yaw_err < -np.radians(180.0):
-        #     yaw_err += np.radians(360.0)
+        #yaw_err = psi - yaw_des
+        #while yaw_err >= np.radians(180.0):
+        #    yaw_err -= np.radians(360.0)
+        #while yaw_err < -np.radians(180.0):
+        #    yaw_err += np.radians(360.0)
 
         # Linear backstepping controller
-        # yaw_mat     = np.array([[np.cos(yaw_des), np.sin(yaw_des)], [np.sin(yaw_des), -np.cos(yaw_des)]])
-        # r_ddot_norm = np.array([r_ddot_des[0], r_ddot_des[1]])
-        # angles_des  = (yaw_mat @ r_ddot_norm) / self.g
-        # roll_ctrl   = -self.att_rollpitch_kp * (phi - angles_des[1]) - self.att_rollpitch_kd * rates[0]
-        # pitch_ctrl  = -self.att_rollpitch_kp * (tet - angles_des[0]) - self.att_rollpitch_kd * rates[1]
-        # yaw_ctrl    = -self.att_yaw_kp * yaw_err - self.att_yaw_kd * (rates[2] - yawrate_des)
-        # att_ctrl    = np.array([roll_ctrl, pitch_ctrl, yaw_ctrl])
+        #yaw_mat     = np.array([[np.cos(yaw_des), np.sin(yaw_des)], [np.sin(yaw_des), -np.cos(yaw_des)]])
+        #r_ddot_norm = np.array([r_ddot_des[0], r_ddot_des[1]])
+        #angles_des  = (yaw_mat @ r_ddot_norm) / self.g
+        #roll_ctrl   = -self.att_rollpitch_kp * (phi - angles_des[1]) - self.att_rollpitch_kd * rates[0]
+        #pitch_ctrl  = -self.att_rollpitch_kp * (tet - angles_des[0]) - self.att_rollpitch_kd * rates[1]
+        #yaw_ctrl    = -self.att_yaw_kp * yaw_err - self.att_yaw_kd * (rates[2] - 0.0)
+        #att_ctrl    = np.array([roll_ctrl, pitch_ctrl, yaw_ctrl])
 
-        # u1       = np.array([(r_ddot_des[2] + self.g) * self.mass])
-        # u2       = self.inertia @ att_ctrl
+        #u1       = np.array([(r_ddot_des[2] + self.g) * self.mass])
+        #u2       = self.inertia @ att_ctrl
 
         # Get motor speed commands
         forces = self.forces_ctrl_map @ np.concatenate((u1, u2))
         # Protect against invalid force and motor speed commands (set them to previous motor speeds)
         forces[forces < 0]  = np.square(self.forces_old[forces < 0]) * self.k_thrust
         cmd_motor_speeds    = np.sqrt(forces / self.k_thrust)
-        self.forces_old     = forces
 
         # Software limits for motor speeds
         cmd_motor_speeds    = np.clip(cmd_motor_speeds, self.rotor_speed_min, self.rotor_speed_max)
@@ -162,9 +174,11 @@ class GeometriControl(object):
         r               = Rotation.from_matrix(rot_des)
         cmd_q           = r.as_quat()
 
+        self.forces_old     = forces
         control_input = {'euler': euler,
+                         'u1' : u1,
                          'cmd_motor_speeds':cmd_motor_speeds,
-                         'cmd_thrust':map_thrust(cmd_thrust),
+                         'cmd_thrust':map_u1(u1),
                          'cmd_moment':cmd_moment,
                          'cmd_quat':cmd_q,
                          'r_ddot_des':r_ddot_des}

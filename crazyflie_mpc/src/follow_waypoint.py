@@ -25,11 +25,13 @@ class MPCDemo():
         # self.m_serviceTakeoff = rospy.Service('takeoff', , self.takeoffService)
         # frames and transforms
         self.worldFrame = rospy.get_param("~world_frame", "world")
-        self.frame = rospy.get_param("~frame")
+        quad_name = "crazy_mpc"
+        self.frame = quad_name
+        #self.frame = rospy.get_param("~frame")
         self.tf_listener = TransformListener()
         
         # subscribers and publishers
-        self.rate = rospy.Rate(200)
+        self.rate = rospy.Rate(250)
         self.angular_vel = np.zeros([3,])  # angular velocity updated by imu subscriber
         self.curr_pos = np.zeros([3,])
         self.curr_quat = np.zeros([4,])
@@ -39,12 +41,15 @@ class MPCDemo():
         self.imu_sub = rospy.Subscriber('/crazyflie/imu', Imu, self.imu_callback)  # subscribing imu
         self.cmd_pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)  # publishing to cmd_vel to control crazyflie
         self.goal_pub = rospy.Publisher('goal', TwistStamped, queue_size=1)  # publishing waypoints along the trajectory        
-        self.vicon_sub = rospy.Subscriber('/vicon/crazy_mpc/pose', PoseStamped, self.vicon_callback) 
+        self.vicon_sub = rospy.Subscriber("/vicon/" + quad_name + "/pose", PoseStamped, self.vicon_callback) 
         self.tf_pub = rospy.Publisher('tf_pos', PoseStamped, queue_size=1)
- 
         # controller and waypoints
         self.m_state = 0 # Idle: 0, Automatic: 1, TakingOff: 2, Landing: 3
+        self.m_thrust = 0
+        self.m_startZ = 0
         points = np.array([  # points for generating trajectory
+                           [-1.409, 2.826, 0.4],
+                           [-1.409, 3.826, 0.4],
                            [-1.409, 2.826, 0.4],
                            [-1.409, 2.826, 0.0]])
         #points = np.array([[0.,-2.,0.],
@@ -83,8 +88,17 @@ class MPCDemo():
         self.curr_quat[2] = data.pose.orientation.z
         self.curr_quat[3] = data.pose.orientation.w
 
-    def takingoffService(self, req):
-        pass
+    def takeoff(self, req):
+        transform = Transformstamped()
+        self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
+        if transform.translation_from_matrix().z > 0 + 0.1: # when the quad has lifted off
+            self.state = 1 # switch to automatic
+        else:
+            pass
+            
+            
+
+
     def landingService(self, req):
         pass
     def generate_traj(self, points):
@@ -92,9 +106,16 @@ class MPCDemo():
         returns trajectory object generated from points
         '''
         return wt.WaypointTraj(points) 
-    def takingoff(self):
-        pass
-    def landing(self):
+    
+    def takeoffService(self, req, res):
+        rospy.loginfo("Takeoff requested!")
+        m_state = 2  # set state to taking off
+        transform = TransformStamped()  # for getting transforms
+        self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
+        self.m_startZ = transform.translation_from_matrix().z  # set z coor for start position
+
+    
+    def land(self):
         rospy.loginfo("landing")
         (pos, quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, rospy.Time(0))
         if pos[3] <= self.initial_state['x'][2] + 0.05:
@@ -102,79 +123,6 @@ class MPCDemo():
             msg = Twist()
             self.cmd_pub.publish(msg)
     
-    def log_ros_info(self, roll, pitch, yaw, r_ddot_des, est_v, cmd_msg, flat, tf_pos, tf_quat):
-        '''
-        logging information from this demo
-        '''
-        # logging controller outputs
-        curr_log_time = rospy.Time.now()
-        u_msg = TwistStamped()
-        u_msg.header.stamp = curr_log_time
-        # roll, pitch, and yaw are mapped to TwistStamped angular
-        u_msg.twist.angular.x = roll          
-        u_msg.twist.angular.y = pitch
-        u_msg.twist.angular.z = yaw
-        # r_ddot_des is mapped to TwistStamped linear
-        u_msg.twist.linear.x = r_ddot_des[0]         
-        u_msg.twist.linear.y = r_ddot_des[1]
-        u_msg.twist.linear.z = r_ddot_des[2]
-        
-        # logging estimate velocities
-        est_v_msg = TwistStamped()
-        est_v_msg.header.stamp = curr_log_time
-        # estimated velocities are mapped to TwistStampedow()
-        est_v_msg.twist.linear.x = est_v[0]  
-        est_v_msg.twist.linear.y = est_v[1]
-        est_v_msg.twist.linear.z = est_v[2]
-        
-        # logging time stamped cmd_vel
-        cmd_stamped_msg = TwistStamped()
-        cmd_stamped_msg.header.stamp = curr_log_time
-        cmd_stamped_msg.twist.linear.x = cmd_msg.linear.x
-        cmd_stamped_msg.twist.linear.y = cmd_msg.linear.y
-        cmd_stamped_msg.twist.linear.z = cmd_msg.linear.z
-        cmd_stamped_msg.twist.angular.z = cmd_msg.angular.z
-
-        # logging waypoints
-        traj_msg = TwistStamped()
-        traj_msg.header.stamp = curr_log_time
-        traj_msg.twist.linear.x = flat['x'][0]
-        traj_msg.twist.linear.y = flat['x'][1]
-        traj_msg.twist.linear.z = flat['x'][2]
-        traj_msg.twist.angular.x = flat['x_dot'][0]
-        traj_msg.twist.angular.y = flat['x_dot'][1]
-        traj_msg.twist.angular.z = flat['x_dot'][2]
-
-        # logging position from tf
-        tf_pose_msg = PoseStamped()
-        tf_pose_msg.header.stamp = curr_log_time
-        tf_pose_msg.pose.position.x = tf_pos[0]
-        tf_pose_msg.pose.position.y = tf_pos[1]
-        tf_pose_msg.pose.position.z = tf_pos[2]
-        tf_pose_msg.pose.orientation.x = tf_quat[0]
-        tf_pose_msg.pose.orientation.y = tf_quat[1]
-        tf_pose_msg.pose.orientation.z = tf_quat[2]
-        tf_pose_msg.pose.orientation.w = tf_quat[3]
-
-        # publishing the messages
-        self.u_pub.publish(u_msg)
-        self.est_vel_pub.publish(est_v_msg)
-        self.cmd_stamped_pub.publish(cmd_stamped_msg)
-        self.goal_pub.publish(traj_msg)
-        self.tf_pub.publish(tf_pose_msg)
-        
-    
-    def sanitize_trajectory_dic(self, trajectory_dic):
-        """
-        Return a sanitized version of the trajectory dictionary where all of the elements are np arrays
-        """
-        trajectory_dic['x'] = np.asarray(trajectory_dic['x'], np.float).ravel()
-        trajectory_dic['x_dot'] = np.asarray(trajectory_dic['x_dot'], np.float).ravel()
-        trajectory_dic['x_ddot'] = np.asarray(trajectory_dic['x_ddot'], np.float).ravel()
-        trajectory_dic['x_dddot'] = np.asarray(trajectory_dic['x_dddot'], np.float).ravel()
-        trajectory_dic['x_ddddot'] = np.asarray(trajectory_dic['x_ddddot'], np.float).ravel()
-
-        return trajectory_dic
     
     def automatic(self):
         curr_time = rospy.get_time()
@@ -210,27 +158,46 @@ class MPCDemo():
         yaw = u['euler'][2]
         thrust = u['cmd_thrust']
         r_ddot_des = u['r_ddot_des']
+        u1 = u['u1']
 
         # publish command
         msg = Twist()
-        msg.linear.x = pitch
-        msg.linear.y = roll
+        msg.linear.x = np.clip(np.degrees(pitch), -10., 10.)
+        msg.linear.y = np.clip(np.degrees(roll), -10., 10.)
         msg.linear.z = thrust
-        msg.angular.z = 0 # hardcoding yawrate to be 0 for now
+        msg.angular.z = np.degrees(0) # hardcoding yawrate to be 0 for now
         self.cmd_pub.publish(msg) # publishing msg to the crazyflie
 
-        self.log_ros_info(roll, pitch, yaw, r_ddot_des, v, msg, flat, tf_pos, tf_quat)
+        self.log_ros_info(roll, pitch, yaw, r_ddot_des, v, msg, flat, tf_pos, tf_quat, u1)
         if v_est_sum != 0:
             self.prev_vel = v
             self.prev_time = curr_time
             self.prev_pos = pos
 
     def idle(self):
-        while rospy.get_time() - self.t0 <= 5.:
+        while rospy.get_time() - self.t0 <= 3:
             msg = Twist()
             self.cmd_pub.publish(msg)
+        self.m_state = 1
+        self.prev_time = rospy.get_time()
+        self.t0 = rospy.get_time()
+
+    def takeoff0(self):
+        imsg = Twist()
+
+        while z_ <= 0.2:
+            if self.m_thrust > 50000:
+                break
+            transform = TransformStamped()  # for getting transforms
+            self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
+            t = self.tf_listener.getLatestCommonTime(self.frame, self.worldFrame)
+            (pos, quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, t)
+            self.m_thrust += 10000 * 0.002
+            self.cmd_pub.publish(msg)
+            z_ = pos[2]
         
         self.m_state = 1
+        self.prev_time = rospy.get_time()
         self.t0 = rospy.get_time()
 
 
@@ -240,16 +207,91 @@ class MPCDemo():
                 self.idle()
             
             elif self.m_state == 3:
-                self.landing()
+                self.land()
             
             elif self.m_state == 1:
                 self.automatic()
             
             elif self.m_state == 2:
-                self.takingoff()
+                self.takeoff()
             
             #self.rate.sleep()
             
+ 
+    def sanitize_trajectory_dic(self, trajectory_dic):
+        """
+        Return a sanitized version of the trajectory dictionary where all of the elements are np arrays
+        """
+        trajectory_dic['x'] = np.asarray(trajectory_dic['x'], np.float).ravel()
+        trajectory_dic['x_dot'] = np.asarray(trajectory_dic['x_dot'], np.float).ravel()
+        trajectory_dic['x_ddot'] = np.asarray(trajectory_dic['x_ddot'], np.float).ravel()
+        trajectory_dic['x_dddot'] = np.asarray(trajectory_dic['x_dddot'], np.float).ravel()
+        trajectory_dic['x_ddddot'] = np.asarray(trajectory_dic['x_ddddot'], np.float).ravel()
+
+        return trajectory_dic
+
+    def log_ros_info(self, roll, pitch, yaw, r_ddot_des, est_v, cmd_msg, flat, tf_pos, tf_quat, u1):
+        '''
+        logging information from this demo
+        '''
+        # logging controller outputs
+        curr_log_time = rospy.Time.now()
+        u_msg = TwistStamped()
+        u_msg.header.stamp = curr_log_time
+        # roll, pitch, and yaw are mapped to TwistStamped angular
+        u_msg.twist.angular.x = roll          
+        u_msg.twist.angular.y = pitch
+        u_msg.twist.angular.z = yaw
+        # r_ddot_des is mapped to TwistStamped linear
+        u_msg.twist.linear.x = r_ddot_des[0]         
+        u_msg.twist.linear.y = r_ddot_des[1]
+        u_msg.twist.linear.z = r_ddot_des[2]
+        
+        # logging estimate velocities
+        est_v_msg = TwistStamped()
+        est_v_msg.header.stamp = curr_log_time
+        # estimated velocities are mapped to TwistStampedow()
+        est_v_msg.twist.linear.x = est_v[0]  
+        est_v_msg.twist.linear.y = est_v[1]
+        est_v_msg.twist.linear.z = est_v[2]
+        
+        # logging time stamped cmd_vel
+        cmd_stamped_msg = TwistStamped()
+        cmd_stamped_msg.header.stamp = curr_log_time
+        cmd_stamped_msg.twist.linear.x = cmd_msg.linear.x
+        cmd_stamped_msg.twist.linear.y = cmd_msg.linear.y
+        cmd_stamped_msg.twist.linear.z = cmd_msg.linear.z
+        cmd_stamped_msg.twist.angular.z = cmd_msg.angular.z
+        cmd_stamped_msg.twist.angular.x = u1
+
+        # logging waypoints
+        traj_msg = TwistStamped()
+        traj_msg.header.stamp = curr_log_time
+        traj_msg.twist.linear.x = flat['x'][0]
+        traj_msg.twist.linear.y = flat['x'][1]
+        traj_msg.twist.linear.z = flat['x'][2]
+        traj_msg.twist.angular.x = flat['x_dot'][0]
+        traj_msg.twist.angular.y = flat['x_dot'][1]
+        traj_msg.twist.angular.z = flat['x_dot'][2]
+
+        # logging position from tf
+        tf_pose_msg = PoseStamped()
+        tf_pose_msg.header.stamp = curr_log_time
+        tf_pose_msg.pose.position.x = tf_pos[0]
+        tf_pose_msg.pose.position.y = tf_pos[1]
+        tf_pose_msg.pose.position.z = tf_pos[2]
+        tf_pose_msg.pose.orientation.x = tf_quat[0]
+        tf_pose_msg.pose.orientation.y = tf_quat[1]
+        tf_pose_msg.pose.orientation.z = tf_quat[2]
+        tf_pose_msg.pose.orientation.w = tf_quat[3]
+
+
+        # publishing the messages
+        self.u_pub.publish(u_msg)
+        self.est_vel_pub.publish(est_v_msg)
+        self.cmd_stamped_pub.publish(cmd_stamped_msg)
+        self.goal_pub.publish(traj_msg)
+        self.tf_pub.publish(tf_pose_msg)
 
 if __name__ == '__main__':
     mpc_demo = MPCDemo()

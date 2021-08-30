@@ -108,7 +108,7 @@ class MPControl(object):
 
         def map_thrust(thrust):
             m = 50000/0.575
-            c = 10000
+            c = 13000
             mapped_thrust = thrust*m + c
             return mapped_thrust
 

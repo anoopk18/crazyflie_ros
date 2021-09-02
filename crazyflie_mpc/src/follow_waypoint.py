@@ -49,7 +49,7 @@ class MPCDemo():
         self.m_thrust = 0
         self.m_startZ = 0
         
-        t_final = 80
+        t_final = 12
         radius = 0.5
         t_plot = np.linspace(0, t_final, num=500)
         # circle center of the circle is 0.2172, 4.5455
@@ -58,7 +58,9 @@ class MPCDemo():
   
         z_traj = np.zeros((len(t_plot),)) + 0.4
         points = np.stack((x_traj, y_traj, z_traj), axis=1)
-
+        print("points shape", points.shape)
+        points[-1, 2] = 0.2
+        print("final points shape", points.shape)
         #points = np.array([  # points for generating trajectory
         #                   [-1.409, 2.826, 0.55],
         #                   [1.609, 2.826, 0.55],
@@ -72,7 +74,7 @@ class MPCDemo():
         #                   [0.,-2.,0.]])
         self.traj = self.generate_traj(points)  # trajectory
         
-        self.controller = MPControl()  # controller
+        self.controller = HybridControl()  # controller
         
         self.initial_state = {'x': np.array([0, 0, 0]), # positions
                               'v': np.array([0, 0, 0]), # velocities

@@ -53,7 +53,7 @@ class HybridControl(object):
         ode             = vertcat(xdot, xdotdot)
         
         # loading neural network parameters
-        ode_torch = torch.load("/home/tom/catkin_ws/src/crazyflie_ros/crazyflie_mpc/src/rigid_1layer.pth", map_location=torch.device('cpu'))['ode_train']
+        ode_torch = torch.load("/home/tom/catkin_ws/src/crazyflie_ros/crazyflie_mpc/src/rigid_1layer_filtered.pth", map_location=torch.device('cpu'))['ode_train']
         param_ls = []
         for _, layer in ode_torch.func.state_dict().items():
             param_ls.append(layer.detach().cpu().numpy())
@@ -64,7 +64,7 @@ class HybridControl(object):
             ode_nn = tanh(mtimes(param_ls[i * 2], ode_nn)) + param_ls[i * 2 + 1]
         ode_nn = mtimes(param_ls[-2], ode_nn) + param_ls[-1]  # output layer
         
-        ode_hybrid = ode + 0.1*ode_nn  # summing knowledge and nn 
+        ode_hybrid = ode + 1*ode_nn  # summing knowledge and nn 
         f               = Function('f', [x, u], [ode_hybrid])
 
         dae = {'x': x, 'p': u, 'ode': f(x, u)}

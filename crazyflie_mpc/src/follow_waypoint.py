@@ -15,6 +15,7 @@ from std_msgs.msg import String
 from scipy.spatial.transform import Rotation
 import waypoint_traj as wt
 from mpc_control import MPControl
+from hybrid_control import HybridControl
 from geometric_control import GeometriControl
 
 
@@ -48,14 +49,14 @@ class MPCDemo():
         self.m_thrust = 0
         self.m_startZ = 0
         
-        t_final = 10
+        t_final = 80
         radius = 0.5
         t_plot = np.linspace(0, t_final, num=500)
         # circle center of the circle is 0.2172, 4.5455
         x_traj = radius * np.cos(t_plot) + 0.2172
         y_traj = radius * np.sin(t_plot) + 4.5455
   
-        z_traj = np.zeros((len(t_plot),)) + 0.55
+        z_traj = np.zeros((len(t_plot),)) + 0.4
         points = np.stack((x_traj, y_traj, z_traj), axis=1)
 
         #points = np.array([  # points for generating trajectory
@@ -157,7 +158,9 @@ class MPCDemo():
         v_est_sum = np.sum(v)
         if v_est_sum == 0.0:
             v = self.prev_vel
-        
+        # clipping
+        v[0:2] = np.clip(v[0:2], -0.7, 0.6)
+        v[2] = np.clip(v[2], -0.2, 0.2)
         #print(v)
         curr_state = {
                     'x': np.array(pos),

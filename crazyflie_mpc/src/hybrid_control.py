@@ -53,7 +53,7 @@ class HybridControl(object):
         ode             = vertcat(xdot, xdotdot)
         
         # loading neural network parameters
-        ode_torch = torch.load("/home/tom/catkin_ws/src/crazyflie_ros/crazyflie_mpc/src/rigid_1layer_filtered.pth", map_location=torch.device('cpu'))['ode_train']
+        ode_torch = torch.load("/home/tom/catkin_ws/src/crazyflie_ros/crazyflie_mpc/src/rigid_1layer_2traj.pth", map_location=torch.device('cpu'))['ode_train']
         param_ls = []
         for _, layer in ode_torch.func.state_dict().items():
             param_ls.append(layer.detach().cpu().numpy())
@@ -97,7 +97,7 @@ class HybridControl(object):
             umax = np.array([15, 15, 15])
             # opti.minimize(1.0 * sumsqr(x[0:3, :] - pos_des) + 0.05 * sumsqr(x[3:, :] - vel_des) + 0.007 * sumsqr(u))
             opti.minimize(1. * sumsqr(x[0:2, :] - pos_des[0:2]) + \
-                          2. * sumsqr(x[2, :] - pos_des[2]) + \
+                          1.2 * sumsqr(x[2, :] - pos_des[2]) + \
                           0.25 * sumsqr(x[3:, :] - vel_des) + 0.05 * sumsqr(u))
 
             for k in range(self.N_ctrl):

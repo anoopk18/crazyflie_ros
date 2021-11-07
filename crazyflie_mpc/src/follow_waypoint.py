@@ -49,18 +49,19 @@ class MPCDemo():
         self.m_thrust = 0
         self.m_startZ = 0
         
-        t_final = 12
-        radius = 0.5
+        t_final = 20
+        radius = 1.25
+        height = 0.55
+        center_x = 0.2172
+        center_y = 4.5455
         t_plot = np.linspace(0, t_final, num=500)
         # circle center of the circle is 0.2172, 4.5455
-        x_traj = radius * np.cos(t_plot) + 0.2172
-        y_traj = radius * np.sin(t_plot) + 4.5455
+        x_traj = radius * np.cos(t_plot) + center_x
+        y_traj = radius * np.sin(t_plot) + center_y
   
-        z_traj = np.zeros((len(t_plot),)) + 0.4
+        z_traj = np.zeros((len(t_plot),)) + height
         points = np.stack((x_traj, y_traj, z_traj), axis=1)
-        print("points shape", points.shape)
         points[-1, 2] = 0.2
-        print("final points shape", points.shape)
         #points = np.array([  # points for generating trajectory
         #                   [-1.409, 2.826, 0.55],
         #                   [1.609, 2.826, 0.55],
@@ -69,9 +70,6 @@ class MPCDemo():
         #                   [-1.409, 2.826, 0.55],
         #                   [-1.409, 2.826, 0.3],
         #                   [-1.409, 2.826, 0.0]])
-        #points = np.array([[0.,-2.,0.],
-        #                   [0.,-2.,0.4],
-        #                   [0.,-2.,0.]])
         self.traj = self.generate_traj(points)  # trajectory
         
         self.controller = HybridControl()  # controller
@@ -88,7 +86,7 @@ class MPCDemo():
     
     def imu_callback(self, data):
         '''
-        call back function for getting current angular velocity
+        callback function for getting current angular velocity
         '''
         imu_angular_vel = Vector3()
         imu_angular_vel = data.angular_velocity
@@ -97,6 +95,9 @@ class MPCDemo():
         self.angular_vel[2] = imu_angular_vel.z
 
     def vicon_callback(self, data):
+        '''
+        callback function for getting vicon positions
+        '''
         self.curr_pos[0] = data.pose.position.x
         self.curr_pos[1] = data.pose.position.y
         self.curr_pos[2] = data.pose.position.z
@@ -105,26 +106,24 @@ class MPCDemo():
         self.curr_quat[2] = data.pose.orientation.z
         self.curr_quat[3] = data.pose.orientation.w
 
-    def takeoff(self, req):
+    def takeoff(self, req):  # TODO
         transform = Transformstamped()
         self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
         if transform.translation_from_matrix().z > 0 + 0.1: # when the quad has lifted off
             self.state = 1 # switch to automatic
         else:
             pass
-            
-            
 
-
-    def landingService(self, req):
+    def landingService(self, req):  # TODO
         pass
+
     def generate_traj(self, points):
         '''
         returns trajectory object generated from points
         '''
         return wt.WaypointTraj(points) 
     
-    def takeoffService(self, req, res):
+    def takeoffService(self, req, res):  # TODO
         rospy.loginfo("Takeoff requested!")
         m_state = 2  # set state to taking off
         transform = TransformStamped()  # for getting transforms
@@ -132,7 +131,7 @@ class MPCDemo():
         self.m_startZ = transform.translation_from_matrix().z  # set z coor for start position
 
     
-    def land(self):
+    def land(self):  # TODO
         rospy.loginfo("landing")
         (pos, quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, rospy.Time(0))
         if pos[3] <= self.initial_state['x'][2] + 0.05:
@@ -140,8 +139,7 @@ class MPCDemo():
             msg = Twist()
             self.cmd_pub.publish(msg)
     
-    
-    def automatic(self):
+    def automatic(self):  # running MPC
         curr_time = rospy.get_time()
         dt = curr_time - self.prev_time
         flat = self.sanitize_trajectory_dic(self.traj.update(curr_time-self.t0))
@@ -156,14 +154,13 @@ class MPCDemo():
         quat = tf_quat
 
         v = (np.array(pos)-np.array(self.prev_pos))/dt  # velocity estimate
-        #print("prev pos\n", self.prev_pos) 
         v_est_sum = np.sum(v)
-        if v_est_sum == 0.0:
+        if v_est_sum == 0.0:  # only update velocity if tf pos has changed
             v = self.prev_vel
+        
         # clipping
-        v[0:2] = np.clip(v[0:2], -0.7, 0.6)
-        v[2] = np.clip(v[2], -0.2, 0.2)
-        #print(v)
+        v = np.clip(v, -0.7, 0.7)
+        
         curr_state = {
                     'x': np.array(pos),
                     'v': v,
@@ -179,10 +176,9 @@ class MPCDemo():
         r_ddot_des = u['r_ddot_des']
         u1 = u['cmd_thrust']
 
-  
-        def map_u1(u1):
+        def map_u1(u1):  # mapping control thrust output to cmd_vel thrust
             # u1 ranges from -0.2 to 0.2
-            trim_cmd = 42000
+            trim_cmd = 43000
             min_cmd = 10000
             u1_trim = 0.327
             c = min_cmd
@@ -201,13 +197,18 @@ class MPCDemo():
         msg.angular.z = np.degrees(0.) # hardcoding yawrate to be 0 for now
         self.cmd_pub.publish(msg) # publishing msg to the crazyflie
 
+        # logging
         self.log_ros_info(roll, pitch, yaw, r_ddot_des, v, msg, flat, tf_pos, tf_quat, u1)
-        if v_est_sum != 0:
+        
+        if v_est_sum != 0:  # only update previous values if tf pos has changed
             self.prev_vel = v
             self.prev_time = curr_time
             self.prev_pos = pos
 
     def idle(self):
+        '''
+        publish zero commands for 3 seconds before switching to automatic
+        '''
         while rospy.get_time() - self.t0 <= 3:
             msg = Twist()
             self.cmd_pub.publish(msg)
@@ -215,7 +216,7 @@ class MPCDemo():
         self.prev_time = rospy.get_time()
         self.t0 = rospy.get_time()
 
-    def takeoff0(self):
+    def takeoff0(self):  # TODO
         imsg = Twist()
 
         while z_ <= 0.2:
@@ -235,6 +236,9 @@ class MPCDemo():
 
 
     def run(self):
+        '''
+        State machine loop
+        '''
         while not rospy.is_shutdown():
             if self.m_state == 0:
                 self.idle()
@@ -260,8 +264,8 @@ class MPCDemo():
         trajectory_dic['x_ddot'] = np.asarray(trajectory_dic['x_ddot'], np.float).ravel()
         trajectory_dic['x_dddot'] = np.asarray(trajectory_dic['x_dddot'], np.float).ravel()
         trajectory_dic['x_ddddot'] = np.asarray(trajectory_dic['x_ddddot'], np.float).ravel()
-
         return trajectory_dic
+
 
     def log_ros_info(self, roll, pitch, yaw, r_ddot_des, est_v, cmd_msg, flat, tf_pos, tf_quat, u1):
         '''

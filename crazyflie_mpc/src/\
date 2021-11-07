@@ -1,9 +1,10 @@
 from casadi import *
 from scipy.spatial.transform import Rotation
 from tf.transformations import euler_from_matrix
+import torch
+from NODE.NODE import *
 
-
-class MPControl(object):
+class HybridControl(object):
     def __init__(self):
         # Quadrotor physical parameters.
         self.mass = 0.03  # quad_params['mass'] # kg
@@ -41,16 +42,30 @@ class MPControl(object):
         self.num_inputs = 3
         x = MX.sym('x', self.num_states, 1)
         u = MX.sym('u', self.num_inputs, 1)
-
+        
         # These settings are for the kinematic model
         sampling_rate   = 0.2
         self.N_ctrl     = 3  # Control horizon (in number of timesteps)
 
-        # Kinematic model
+        # Kinematic model (knowledge)
         xdot            = vertcat(x[3], x[4], x[5])
         xdotdot         = u  # Notice that there are no gravity term here
         ode             = vertcat(xdot, xdotdot)
-        f               = Function('f', [x, u], [ode])
+        
+        # loading neural network parameters
+        ode_torch = torch.load("/home/tom/catkin_ws/src/crazyflie_ros/crazyflie_mpc/src/rigid_1layer_32_train_2traj.pth", map_location=torch.device('cpu'))['ode_train']
+        param_ls = []
+        for _, layer in ode_torch.func.state_dict().items():
+            param_ls.append(layer.detach().cpu().numpy())
+        ode_nn = vertcat(x, u)
+        # unrolling the nn to build a function
+        for i in range(int(len(param_ls) / 2) - 1):
+            # hidden layers
+            ode_nn = tanh(mtimes(param_ls[i * 2], ode_nn)) + param_ls[i * 2 + 1]
+        ode_nn = mtimes(param_ls[-2], ode_nn) + param_ls[-1]  # output layer
+        
+        ode_hybrid = ode + 1*ode_nn  # summing knowledge and nn 
+        f               = Function('f', [x, u], [ode_hybrid])
 
         dae = {'x': x, 'p': u, 'ode': f(x, u)}
         options = dict(tf=sampling_rate, simplify=True, number_of_finite_elements=4)

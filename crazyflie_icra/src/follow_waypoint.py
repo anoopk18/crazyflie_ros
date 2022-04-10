@@ -11,13 +11,12 @@ from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import Imu
 from tf import TransformListener
 from std_msgs.msg import String
+from std_srvs.srv import Empty, EmptyResponse
 
 from scipy.spatial.transform import Rotation
 import waypoint_traj as wt
 from mpc_control import MPControl
-from hybrid_control import HybridControl
 from geometric_control import GeometriControl
-from gp_control import GPControl
 
 
 class MPCDemo():
@@ -27,13 +26,12 @@ class MPCDemo():
         # self.m_serviceTakeoff = rospy.Service('takeoff', , self.takeoffService)
         # frames and transforms
         self.worldFrame = rospy.get_param("~world_frame", "world")
-        quad_name = "crazyflie_mpc"
-        self.frame = quad_name
-        #self.frame = rospy.get_param("~frame")
+        quad_name = rospy.get_param("~frame")
+        self.frame = quad_name + "/base_link"
         self.tf_listener = TransformListener()
         
         # subscribers and publishers
-        self.rate = rospy.Rate(370)
+        self.rate = rospy.Rate(250)
         self.angular_vel = np.zeros([3,])  # angular velocity updated by imu subscriber
         self.curr_pos = np.zeros([3,])
         self.curr_quat = np.zeros([4,])
@@ -43,65 +41,55 @@ class MPCDemo():
         self.imu_sub = rospy.Subscriber('/crazyflie/imu', Imu, self.imu_callback)  # subscribing imu
         self.cmd_pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)  # publishing to cmd_vel to control crazyflie
         self.goal_pub = rospy.Publisher('goal', TwistStamped, queue_size=1)  # publishing waypoints along the trajectory        
-        self.vicon_sub = rospy.Subscriber("/vicon/" + quad_name + "/pose", PoseStamped, self.vicon_callback) 
-        self.tf_pub = rospy.Publisher('tf_pos', PoseStamped, queue_size=1)
+        self.vicon_sub = rospy.Subscriber("/mocap_node/" + quad_name + "/pose", PoseStamped, self.vicon_callback)
+        self.tf_pub = rospy.Publisher('tf_pos', PoseStamped, queue_size=1) 
+        self.serviceTakeoff = rospy.Service('takeoff', Empty, self.takeoffService)
+        self.serviceLand = rospy.Service('land', Empty, self.landingService)
+
         # controller and waypoints
         self.m_state = 0 # Idle: 0, Automatic: 1, TakingOff: 2, Landing: 3
         self.m_thrust = 0
         self.m_startZ = 0
         
-        t_final = 12
-        radius = 0.5
-        height = 0.55
-        center_x = 0.2172 #0.1728 # 0.2172
-        center_y = 4.5455#7.8015 # 4.5455
+        t_final = 11
+        radius = 0.3
         t_plot = np.linspace(0, t_final, num=500)
-        # circle center of the circle is 0.2172, 4.5455
-        x_traj = radius * np.cos(t_plot) + center_x
-        y_traj = radius * np.sin(t_plot) + center_y
+        # center of the circle is 0.2172, 4.5455
+        x_traj = radius * np.cos(t_plot) + -0.311
+        y_traj = radius * np.sin(t_plot) + -1.511
   
-        z_traj = np.zeros((len(t_plot),)) + height
-        points = np.stack((x_traj, y_traj, z_traj), axis=1)
-        points[-1, 2] = 0.2
-        #points = np.array([  # points for generating trajectory
-        #                   [-1.409, 2.826, 0.55],
-        #                   [1.609, 2.826, 0.55],
-        #                   [1.609, 5.826, 0.55],
-        #                   [-1.409, 5.826, 0.55],
-        #                   [-1.409, 2.826, 0.55],
-        #                   [-1.409, 2.826, 0.3],
-        #                   [-1.409, 2.826, 0.0]])
-        rl_pt_count = 12
-        rl_x = np.ones([rl_pt_count*2-1,1])*0.1376
-        rl_z = np.ones([rl_pt_count*2-1,1])*0.7
-        rl_y_to = np.linspace(1.80, 6.73, rl_pt_count)
-        rl_y_fro = np.linspace(rl_y_to[-2], 1.80, rl_pt_count-1)
-        rl_y = np.concatenate([rl_y_to, rl_y_fro], 0)
-        rl_points = np.concatenate([rl_x, rl_y.reshape([-1, 1]), rl_z], 1)
-        rl_points[-2,2] = 0.4
-        rl_points[-1,2] = 0.2  # rl_points are for back and forth in y
-
-        updown_count = 8
-        max_h = 2.3
-        min_h = 0.4
-        up_z_s = np.linspace(min_h, max_h, updown_count).reshape([-1,1])
-        down_z = np.linspace(up_z_s[-2], min_h, updown_count-1).reshape([-1,1])
-        up_z = np.linspace(down_z[-2], max_h, updown_count-1).reshape([-1,1])
+        z_traj = np.zeros((len(t_plot),)) + 0.4111
+        circle_points = np.stack((x_traj, y_traj, z_traj), axis=1)
+        #print(points)
+        #print("points shape", points.shape)
+        #points[-1, 2] = 0.2 #final landing height - > convert to a rosservice
+        #print("final points shape", points.shape)
+        updown_points = np.array([  # points for generating trajectory
+                           [0.96, -0.4169, 0.21],
+                           [0.96, -0.4200, 0.41],
+                           [0.96, -0.4200, 0.61],
+                           [0.96, -1.512, 0.61],
+                           [0.96, -2.5, 0.61],
+                           [0.96, -0.420, 0.61],
+                           [0.96, -2.5, 0.61],
+                           [0.96, -1.512, 0.61],
+                           [0.96, -0.4200, 0.61],
+                           [0.96, -0.4200, 0.41],
+                           [0.96, -0.4169, 0.21]])
+        #points = np.array([[0.2172, 4.5455, 0.5],
+        #                   [0.2172, 4.5455, 0.6]])
+        #-----GENERATE TAKEOFF AND LANDING TRAJECTORY
+        points = updown_points
+        self.takeoff_z = points[0, :]
+        takeoff_points = np.vstack((np.array([points[0, 0], points[0, 1], 0]), self.takeoff_z))
+        self.traj_takeoff = self.generate_traj(takeoff_points)
+        land_points = np.vstack((points[-1, :], np.array([points[-1, 0], points[-1, 1], 0.2]))) # let the ending point be at the same x y location with height 0.2
+        self.traj_land = self.generate_traj(land_points)
         
-        updown_z = np.concatenate([up_z_s, down_z, 
-                                   up_z, down_z, 
-                                   up_z, down_z, 
-                                   up_z, down_z],0)
-        updown_len = len(updown_z)
-        updown_x = np.ones([updown_len,1]) * 0.1376
-        updown_y = np.ones([updown_len,1]) * 1.80
-        # updown_points are for back and forth in z
-        updown_points = np.concatenate([updown_x, updown_y, updown_z], 1)
-
-        self.traj = self.generate_traj(points)  # trajectory
+        #-----GENERATE MAIN TRAJECTORY
+        self.traj = self.generate_traj(points)  # input points should have size [traj_len, 3]
         
-        ############# CONTROLLER ########### 
-        self.controller = GPControl()  # controller
+        self.controller = GeometriControl()  # controller
         
         self.initial_state = {'x': np.array([0, 0, 0]), # positions
                               'v': np.array([0, 0, 0]), # velocities
@@ -115,7 +103,7 @@ class MPCDemo():
     
     def imu_callback(self, data):
         '''
-        callback function for getting current angular velocity
+        call back function for getting current angular velocity
         '''
         imu_angular_vel = Vector3()
         imu_angular_vel = data.angular_velocity
@@ -124,9 +112,6 @@ class MPCDemo():
         self.angular_vel[2] = imu_angular_vel.z
 
     def vicon_callback(self, data):
-        '''
-        callback function for getting vicon positions
-        '''
         self.curr_pos[0] = data.pose.position.x
         self.curr_pos[1] = data.pose.position.y
         self.curr_pos[2] = data.pose.position.z
@@ -134,46 +119,15 @@ class MPCDemo():
         self.curr_quat[1] = data.pose.orientation.y
         self.curr_quat[2] = data.pose.orientation.z
         self.curr_quat[3] = data.pose.orientation.w
-
-    def takeoff(self, req):  # TODO
-        transform = Transformstamped()
-        self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
-        if transform.translation_from_matrix().z > 0 + 0.1: # when the quad has lifted off
-            self.state = 1 # switch to automatic
-        else:
-            pass
-
-    def landingService(self, req):  # TODO
-        pass
-
-    def generate_traj(self, points):
-        '''
-        returns trajectory object generated from points
-        '''
-        return wt.WaypointTraj(points) 
-    
-    def takeoffService(self, req, res):  # TODO
-        rospy.loginfo("Takeoff requested!")
-        m_state = 2  # set state to taking off
-        transform = TransformStamped()  # for getting transforms
-        self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
-        self.m_startZ = transform.translation_from_matrix().z  # set z coor for start position
-
-    
-    def land(self):  # TODO
-        rospy.loginfo("landing")
-        (pos, quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, rospy.Time(0))
-        if pos[3] <= self.initial_state['x'][2] + 0.05:
-            self.m_state = 0
-            msg = Twist()
-            self.cmd_pub.publish(msg)
-    
-    def automatic(self):  # running MPC
+        
+            
+    #-----TRAJECTORY CONTROL 
+    def traj_control(self, traj):
         curr_time = rospy.get_time()
         dt = curr_time - self.prev_time
-        flat = self.sanitize_trajectory_dic(self.traj.update(curr_time-self.t0))
+        flat = self.sanitize_trajectory_dic(traj.update(curr_time-self.t0))
 
-        transform = TransformStamped()  # for getting transforms
+        #transform = TransformStamped()  # for getting transforms
         self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
         t = self.tf_listener.getLatestCommonTime(self.frame, self.worldFrame)
         (tf_pos, tf_quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, t)  # position and quaternion in world frame
@@ -183,13 +137,14 @@ class MPCDemo():
         quat = tf_quat
 
         v = (np.array(pos)-np.array(self.prev_pos))/dt  # velocity estimate
+        #print("prev pos\n", self.prev_pos) 
         v_est_sum = np.sum(v)
-        if v_est_sum == 0.0:  # only update velocity if tf pos has changed
+        if v_est_sum == 0.0:
             v = self.prev_vel
-        
         # clipping
-        v = np.clip(v, -0.7, 0.7)
-        
+        v[0:2] = np.clip(v[0:2], -0.7, 0.6)
+        v[2] = np.clip(v[2], -0.2, 0.2)
+        #print(v)
         curr_state = {
                     'x': np.array(pos),
                     'v': v,
@@ -205,9 +160,126 @@ class MPCDemo():
         r_ddot_des = u['r_ddot_des']
         u1 = u['cmd_thrust']
 
-        def map_u1(u1):  # mapping control thrust output to cmd_vel thrust
+  
+        def map_u1(u1):
             # u1 ranges from -0.2 to 0.2
-            trim_cmd = 43000
+            trim_cmd = 42000 # 42000 for old quad
+            min_cmd = 10000 # 10000 for old quad
+            u1_trim = 0.327
+            c = min_cmd
+            m = (trim_cmd - min_cmd)/u1_trim
+            mapped_u1 = u1*m + c
+            if mapped_u1 > 60000:
+                mapped_u1 = 60000
+            return mapped_u1
+
+
+        # publish command
+        msg = Twist()
+        msg.linear.x = np.clip(np.degrees(pitch), -10., 10.)  # pitch
+        msg.linear.y = np.clip(np.degrees(roll), -10., 10.)  # roll
+        msg.linear.z = map_u1(thrust)
+        msg.angular.z = np.degrees(0.) # hardcoding yawrate to be 0 for now
+        self.cmd_pub.publish(msg) # publishing msg to the crazyflie
+
+        self.log_ros_info(roll, pitch, yaw, r_ddot_des, v, msg, flat, tf_pos, tf_quat, u1)
+        if v_est_sum != 0:
+            self.prev_vel = v
+            self.prev_time = curr_time
+            self.prev_pos = pos  
+        return traj     
+
+
+
+    def generate_traj(self, points):
+        '''
+        returns trajectory object generated from points
+        '''
+        return wt.WaypointTraj(points) 
+    
+    #-----TAKEOFF & LANDING SERVICE CALL FUNCTIONS, WHEN CALLED SWITCH STATE TO TAKING OFF AND LANDING
+    def takeoffService(self, req):
+        rospy.loginfo("Takeoff requested!")
+
+        self.m_state = 2  # set state to taking off
+        self.prev_time = rospy.get_time()
+        self.t0 = rospy.get_time()
+        return EmptyResponse()
+
+    def landingService(self, req):
+        rospy.loginfo("Land requested!")
+
+        self.m_state = 3  # set state to land
+        self.prev_time = rospy.get_time()
+        self.t0 = rospy.get_time()
+        return EmptyResponse()
+
+    def takeoff(self):
+        rospy.loginfo("Taking off")
+        self.traj_takeoff = self.traj_control(self.traj_takeoff)
+        #rospy.loginfo(self.takeoff_z[2])
+        #rospy.loginfo(self.prev_pos[2])
+        # listen for quad position
+        self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
+        t = self.tf_listener.getLatestCommonTime(self.frame, self.worldFrame)
+        (tf_pos, tf_quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, t)  # position and quaternion in world frame
+        if self.prev_pos[2] >= tf_pos[2]: # lowering the height temporarily
+            print('automatic state reached')
+            self.m_state = 1 # switch to automatic
+            self.prev_time = rospy.get_time()
+            self.t0 = rospy.get_time()
+
+    def land(self):
+        rospy.loginfo("landing")
+        self.traj_land = self.traj_control(self.traj_land)
+        if self.prev_pos[2] <= 0.2:
+            self.m_state = 0
+            msg = Twist()
+            self.cmd_pub.publish(msg)
+    
+    
+    def automatic(self):
+        curr_time = rospy.get_time()
+        dt = curr_time - self.prev_time
+        flat = self.sanitize_trajectory_dic(self.traj.update(curr_time-self.t0))
+
+        transform = TransformStamped()  # for getting transforms
+        self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
+        t = self.tf_listener.getLatestCommonTime(self.frame, self.worldFrame)
+        (tf_pos, tf_quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, t)  # position and quaternion in world frame
+        vicon_pos = self.curr_pos
+        vicon_quat = self.curr_quat
+        pos = tf_pos
+        quat = tf_quat
+
+        v = (np.array(pos)-np.array(self.prev_pos))/dt  # velocity estimate
+        #print("prev pos\n", self.prev_pos) 
+        v_est_sum = np.sum(v)
+        if v_est_sum == 0.0:
+            v = self.prev_vel
+        # clipping
+        v[0:2] = np.clip(v[0:2], -0.7, 0.6)
+        v[2] = np.clip(v[2], -0.2, 0.2)
+        #print(v)
+        curr_state = {
+                    'x': np.array(pos),
+                    'v': v,
+                    'q': np.array(quat),
+                    'w': self.angular_vel}
+ 
+        # controller update
+        u = self.controller.update(curr_time, curr_state, flat)
+        roll = u['euler'][0]
+        pitch = u['euler'][1]
+        yaw = u['euler'][2]
+        thrust = u['cmd_thrust']
+        r_ddot_des = u['r_ddot_des']
+        u1 = u['cmd_thrust']
+
+  
+        def map_u1(u1):
+            # u1 ranges from -0.2 to 0.2
+            trim_cmd = 42000
             min_cmd = 10000
             u1_trim = 0.327
             c = min_cmd
@@ -226,26 +298,28 @@ class MPCDemo():
         msg.angular.z = np.degrees(0.) # hardcoding yawrate to be 0 for now
         self.cmd_pub.publish(msg) # publishing msg to the crazyflie
 
-        # logging
         self.log_ros_info(roll, pitch, yaw, r_ddot_des, v, msg, flat, tf_pos, tf_quat, u1)
-        
-        if v_est_sum != 0:  # only update previous values if tf pos has changed
+        if v_est_sum != 0:
             self.prev_vel = v
             self.prev_time = curr_time
             self.prev_pos = pos
 
     def idle(self):
-        '''
-        publish zero commands for 3 seconds before switching to automatic
-        '''
         while rospy.get_time() - self.t0 <= 3:
             msg = Twist()
             self.cmd_pub.publish(msg)
-        self.m_state = 1
+        #self.m_state = 1
         self.prev_time = rospy.get_time()
         self.t0 = rospy.get_time()
+        #print(self.curr_pos)
 
-    def takeoff0(self):  # TODO
+        # temporarily print out stuff for debugging
+        #self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
+        #t = self.tf_listener.getLatestCommonTime(self.frame, self.worldFrame)
+        #(tf_pos, tf_quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, t)  # position and quaternion in world frame
+        #print(tf_pos[2])
+
+    def takeoff0(self):
         imsg = Twist()
 
         while z_ <= 0.2:
@@ -265,9 +339,6 @@ class MPCDemo():
 
 
     def run(self):
-        '''
-        State machine loop
-        '''
         while not rospy.is_shutdown():
             if self.m_state == 0:
                 self.idle()
@@ -281,7 +352,7 @@ class MPCDemo():
             elif self.m_state == 2:
                 self.takeoff()
             
-            # self.rate.sleep()
+            #self.rate.sleep()
             
  
     def sanitize_trajectory_dic(self, trajectory_dic):
@@ -293,8 +364,8 @@ class MPCDemo():
         trajectory_dic['x_ddot'] = np.asarray(trajectory_dic['x_ddot'], np.float).ravel()
         trajectory_dic['x_dddot'] = np.asarray(trajectory_dic['x_dddot'], np.float).ravel()
         trajectory_dic['x_ddddot'] = np.asarray(trajectory_dic['x_ddddot'], np.float).ravel()
-        return trajectory_dic
 
+        return trajectory_dic
 
     def log_ros_info(self, roll, pitch, yaw, r_ddot_des, est_v, cmd_msg, flat, tf_pos, tf_quat, u1):
         '''
@@ -364,3 +435,4 @@ if __name__ == '__main__':
     mpc_demo.run()
     rospy.spin()
         
+

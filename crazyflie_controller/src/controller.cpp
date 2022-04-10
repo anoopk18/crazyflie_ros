@@ -147,7 +147,7 @@ private:
                 tf::StampedTransform transform;
                 m_listener.lookupTransform(m_worldFrame, m_frame, ros::Time(0), transform);
                 //ROS_INFO_STREAM("\ncurrent z is: " << transform.getOrigin().z());
-                if (transform.getOrigin().z() > m_startZ + 0.1 || m_thrust > 50000)
+                if (transform.getOrigin().z() > 0.2 || m_thrust > 50000)  //z > 0.0 for optitrack
                 {
                     ROS_INFO_STREAM("in here, setting state to auto");
                     pidReset();
@@ -171,10 +171,10 @@ private:
             break;
         case Landing:
             {
-                m_goal.pose.position.z = m_startZ + 0.05;
+                m_goal.pose.position.z = 0.05;  //-0.2 for optitrack
                 tf::StampedTransform transform;
                 m_listener.lookupTransform(m_worldFrame, m_frame, ros::Time(0), transform);
-                if (transform.getOrigin().z() <= m_startZ + 0.05) {
+                if (transform.getOrigin().z() <= 0.05) { //-0.1 for optitrack
                     m_state = Idle;
                     geometry_msgs::Twist msg;
                     geometry_msgs::TwistStamped msg_stamped;

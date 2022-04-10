@@ -1,12 +1,12 @@
 <?xml version="1.0"?>
 <launch>
   <arg name="uri" default="radio://0/80/2M" />
-  <arg name="frame" default="crazyflie_mpc" />
+  <arg name="frame" default="crazy_mpc" />
   <arg name="world_frame" default="world"/>
   <arg name="joy_dev" default="/dev/input/js0" />
 
-  <!-- run vicon bridge -->
-  <include file="$(find mocap_vicon)/launch/vicon.launch"/>
+  <!-- run optitrack bridge -->
+  <include file="$(find mocap_optitrack)/launch/mocap.launch"/>
   
   <include file="$(find crazyflie_driver)/launch/crazyflie_server.launch">
   </include>
@@ -18,15 +18,15 @@
       <arg name="enable_logging" value="True" />
     </include>
 
-    <!--node name="joy" pkg="joy" type="joy_node" output="screen">
+    <node name="joy" pkg="joy" type="joy_node" output="screen">
       <param name="dev" value="$(arg joy_dev)" />
-    </node-->
+    </node>
 
-    <node name="joystick_controller" pkg="crazyflie_demo" type="controller.py" output="screen">
+    <node name="crazyflie_mpc_controller" pkg="crazyflie_icra" type="xbox_client.py" output="screen">
       <param name="use_crazyflie_controller" value="True" />
     </node>
 
-    <node name="mpc_demo" pkg="crazyflie_mpc" type="follow_waypoint.py" output="screen">
+    <node name="icra_demo" pkg="crazyflie_icra" type="follow_waypoint.py" output="screen">
         <param name="frame"  value="$(arg frame)"/>
         <param name="world_frame" value="$(arg world_frame)"/>
     </node>

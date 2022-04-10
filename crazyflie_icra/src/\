@@ -44,8 +44,8 @@ class HybridControl(object):
         u = MX.sym('u', self.num_inputs, 1)
         
         # These settings are for the kinematic model
-        sampling_rate   = 0.06
-        self.N_ctrl     = 10  # Control horizon (in number of timesteps)
+        sampling_rate   = 0.2
+        self.N_ctrl     = 3  # Control horizon (in number of timesteps)
 
         # Kinematic model (knowledge)
         xdot            = vertcat(x[3], x[4], x[5])
@@ -53,7 +53,7 @@ class HybridControl(object):
         ode             = vertcat(xdot, xdotdot)
         
         # loading neural network parameters
-        ode_torch = torch.load("/home/tom/catkin_ws/src/crazyflie_ros/crazyflie_mpc/src/knode_models/rigid_1layer_2traj.pth", map_location=torch.device('cpu'))['ode_train']
+        ode_torch = torch.load("/home/tom/catkin_ws/src/crazyflie_ros/crazyflie_mpc/src/rigid_1layer_32_train_2traj.pth", map_location=torch.device('cpu'))['ode_train']
         param_ls = []
         for _, layer in ode_torch.func.state_dict().items():
             param_ls.append(layer.detach().cpu().numpy())

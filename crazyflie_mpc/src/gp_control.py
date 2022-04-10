@@ -1,10 +1,11 @@
-from casadi import *
 from scipy.spatial.transform import Rotation
+from casadi import *
 from tf.transformations import euler_from_matrix
-import torch
+import sys
+import pickle
 from NODE.NODE import *
 
-class HybridControl(object):
+class GPControl(object):
     def __init__(self):
         # Quadrotor physical parameters.
         self.mass = 0.03  # quad_params['mass'] # kg
@@ -19,14 +20,9 @@ class HybridControl(object):
 
         self.inertia = np.diag(np.array([self.Ixx, self.Iyy, self.Izz]))  # kg*m^2
         self.g = 9.81  # m/s^2
-        
-        self.geo_rollpitch_kp = 10
-        self.geo_rollpitch_kd = 2 * 1.0 * np.sqrt(self.geo_rollpitch_kp)
-        self.geo_yaw_kp = 50
-        self.geo_yaw_kd = 2 * 1.15 * np.sqrt(self.geo_yaw_kp)
-        self.att_kp_mat = np.diag(np.array([self.geo_rollpitch_kp, self.geo_rollpitch_kp, self.geo_yaw_kp]))
-        self.att_kd_mat = np.diag(np.array([self.geo_rollpitch_kd, self.geo_rollpitch_kd, self.geo_yaw_kd]))
-        k = self.k_drag / self.k_thrust
+
+
+        k = self.k_drag / self.k_thrust  # 0.003391304347826087
         self.ctrl_forces_map = np.array([[1, 1, 1, 1],
                                          [0, self.arm_length, 0, -self.arm_length],
                                          [-self.arm_length, 0, self.arm_length, 0],  # 0.046
@@ -40,40 +36,49 @@ class HybridControl(object):
 
         self.num_states = 6
         self.num_inputs = 3
-        x = MX.sym('x', self.num_states, 1)
-        u = MX.sym('u', self.num_inputs, 1)
-        
-        # These settings are for the kinematic model
-        sampling_rate   = 0.06
-        self.N_ctrl     = 10  # Control horizon (in number of timesteps)
+        blank           = MX.sym('blank')
+        x               = MX.sym('x', self.num_states, 1)
+        u               = MX.sym('u', self.num_inputs, 1)
 
-        # Kinematic model (knowledge)
-        xdot            = vertcat(x[3], x[4], x[5])
-        xdotdot         = u  # Notice that there are no gravity term here
-        ode             = vertcat(xdot, xdotdot)
-        
-        # loading neural network parameters
-        ode_torch = torch.load("/home/tom/catkin_ws/src/crazyflie_ros/crazyflie_mpc/src/knode_models/rigid_1layer_2traj.pth", map_location=torch.device('cpu'))['ode_train']
-        param_ls = []
-        for _, layer in ode_torch.func.state_dict().items():
-            param_ls.append(layer.detach().cpu().numpy())
-        ode_nn = vertcat(x, u)
-        # unrolling the nn to build a function
-        for i in range(int(len(param_ls) / 2) - 1):
-            # hidden layers
-            ode_nn = tanh(mtimes(param_ls[i * 2], ode_nn)) + param_ls[i * 2 + 1]
-        ode_nn = mtimes(param_ls[-2], ode_nn) + param_ls[-1]  # output layer
-        
-        ode_hybrid = ode + 1*ode_nn  # summing knowledge and nn 
-        f               = Function('f', [x, u], [ode_hybrid])
+        sampling_rate   = 0.4
+        self.N_ctrl     = 3  # Control horizon (in number of timesteps)
 
-        dae = {'x': x, 'p': u, 'ode': f(x, u)}
-        options = dict(tf=sampling_rate, simplify=True, number_of_finite_elements=4)
-        intg = integrator('intg', 'rk', dae, options)
-        res = intg(x0=x, p=u)
-        x_next = res['xf']
-        self.Dynamics = Function('F', [x, u], [x_next])
+        with open('/home/tom/catkin_ws/src/crazyflie_ros/crazyflie_mpc/src/gp_models/gpModel_kinematic_expt_fil_82pts.pkl', 'rb') as f:
+            gp = pickle.load(f)
 
+        X_train             = gp.X_train_  # X_train
+        alpha               = gp.alpha_  # alpha
+        loaded_gp_kernel    = gp.kernel_
+        kernel_params       = loaded_gp_kernel.get_params()
+        length_scale        = kernel_params['k2__length_scale']  # kernel length scale
+        constant_rbf        = kernel_params['k1__constant_value']  # kernel constant
+        gp_input            = vertcat(x, u)  # the input to GP [9, 1]
+        rep_size            = X_train.shape[0]
+        # print(X_train.shape)
+        sqr_diff            = (X_train / length_scale - repmat(gp_input / length_scale, 1, rep_size).T) ** 2  # [N, 9]
+
+        dists               = sum2(sqr_diff)
+        K                   = np.exp(-0.5 * dists)
+        gp_mean             = (constant_rbf * K.T @ alpha).T
+
+        xdot                = vertcat(x[3], x[4], x[5])
+        xdotdot             = u
+        ode                 = vertcat(xdot, xdotdot)
+        f                   = Function('f', [x, u], [ode+gp_mean])
+
+        self.geo_rollpitch_kp   = 10
+        self.geo_rollpitch_kd   = 2 * 1.0 * np.sqrt(self.geo_rollpitch_kp)
+        self.geo_yaw_kp         = 50
+        self.geo_yaw_kd         = 2 * 1.15 * np.sqrt(self.geo_yaw_kp)
+        self.att_kp_mat         = np.diag(np.array([self.geo_rollpitch_kp, self.geo_rollpitch_kp, self.geo_yaw_kp]))
+        self.att_kd_mat         = np.diag(np.array([self.geo_rollpitch_kd, self.geo_rollpitch_kd, self.geo_yaw_kd]))
+
+        dae             = {'x': x, 'p': u, 'ode': f(x, u)}
+        options         = dict(tf=sampling_rate, simplify=True, number_of_finite_elements=4)
+        intg            = integrator('intg', 'rk', dae, options)
+        res             = intg(x0=x, p=u)
+        x_next          = res['xf']
+        self.Dynamics   = Function('F', [x, u], [x_next])
         self.downsample_cnt = 0
 
     def update(self, t, state, flat_output):
@@ -160,3 +165,4 @@ class HybridControl(object):
                          'cmd_quat': cmd_quat,
                          'r_ddot_des': self.r_ddot_des}
         return control_input
+

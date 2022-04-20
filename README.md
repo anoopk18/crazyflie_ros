@@ -2,6 +2,8 @@
 
 crazyflie_ros
 =============
+Troubleshooting document:
+https://docs.google.com/document/d/1oFl0Bxf3U5AaVwHTUb5rwoeOYc7bijyok7a3xf2FJ6I/edit?usp=sharing
 
 ROS stack for Bitcraze Crazyflie (http://www.bitcraze.se/), with the following features:
 

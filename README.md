@@ -2,6 +2,8 @@
 
 crazyflie_ros
 =============
+Troubleshooting document:
+https://docs.google.com/document/d/1oFl0Bxf3U5AaVwHTUb5rwoeOYc7bijyok7a3xf2FJ6I/edit?usp=sharing
 
 ROS stack for Bitcraze Crazyflie (http://www.bitcraze.se/), with the following features:
 
@@ -13,43 +15,6 @@ ROS stack for Bitcraze Crazyflie (http://www.bitcraze.se/), with the following f
 * No dependency to the Bitcraze SDK (Driver and Controller written in C++)
 
 A tutorial (for a slightly older version) is available in W. Hönig and N. Ayanian. "Flying Multiple UAVs Using ROS", Chapter in Robot Operating System (ROS): The Complete Reference (Volume 2), Springer, 2017. (see http://act.usc.edu/publications.html for a free pre-print).
-
-If you want to control many Crazyflies or look for a good controller for a single Crazyflie, take a look at http://crazyswarm.readthedocs.io/en/latest/. We are currently in the process to unify the Crazyswarm and crazyflie_ros as well as contributing the Crazyswarm firmware changes back to the official firmware.
-
-## Citing This Work
-
-This project is published under the very permissive MIT License. However,
-if you use the package we appreciate if you credit this project accordingly.
-
-For academic publications, you can cite the following book chapter:
-```
-@Inbook{crazyflieROS,
-  author={Wolfgang H{\"o}nig
-          and Nora Ayanian},
-  editor={Anis Koubaa},
-  title={Flying Multiple UAVs Using ROS},
-  bookTitle={Robot Operating System (ROS): The Complete Reference  (Volume 2)},
-  year={2017},
-  publisher={Springer International Publishing},
-  pages={83--118},
-  isbn={978-3-319-54927-9},
-  doi={10.1007/978-3-319-54927-9_3},
-  url={https://doi.org/10.1007/978-3-319-54927-9_3}
-}
-
-```
-
-If your work is related to Mixed Reality, you might cite the paper which introduced the package instead, using the following bibtex entry:
-```
-@conference{HoenigMixedReality2015,
-  author = {Wolfgang H{\"o}nig and Christina Milanes and Lisa Scaria and Thai Phan and Mark Bolas and Nora Ayanian},
-  booktitle = {IEEE/RSJ Intl Conf. Intelligent Robots and Systems},
-  pages = {5382 - 5387},
-  title = {Mixed Reality for Robotics},
-  year = {2015}}
-```
-
-For any other mentioning please include my affiliation (ACTLab at University of Southern California or USC in short; The link to our webpage is http://act.usc.edu) as this work was partially done as part of my research at USC.
 
 ## Installation
 
@@ -65,8 +30,7 @@ Use `catkin_make` on your workspace to compile.
 
 ## Usage
 
-There are six packages included: crazyflie_cpp, crazyflie_driver, crazyflie_tools, crazyflie_description, crazyflie_controller, and crazyflie_demo.
-Note that the below description might be slightly out-of-date, as we continue merging the Crazyswarm and crazyflie_ros.
+There are seven packages included: crazyflie_cpp, crazyflie_driver, crazyflie_tools, crazyflie_description, crazyflie_controller, crazyflie_demo, and crazyflie_icra.
 
 ### Crazyflie_Cpp
 
@@ -119,6 +83,14 @@ roslaunch crazyflie_demo multi_teleop_xbox360.launch uri1:=radio://0/100/2M/E7E7
 ```
 
 Please check the launch files in the crazyflie_demo package for other examples, including simple waypoint navigation.
+
+### Crazyflie_icra
+
+This package contains the code for running trajectory tracking using a geometric controller. The code is developed for ICRA 2022 demo. The nodes are fully integrated with optitack motion capture systems. This package is still under development. The waypoints are currently defined in follow_waypoint.py. To use the package, run
+```
+roslaunch crazyflie_icra icra_demo.launch
+```
+This will enable the quad follow the predefined waypoint using the geometric controller.
 
 ## ROS Features
 

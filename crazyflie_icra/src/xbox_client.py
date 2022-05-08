@@ -26,6 +26,10 @@ class Controller():
             rospy.wait_for_service('takeoff')
             rospy.loginfo("found takeoff service")
             self._takeoff = rospy.ServiceProxy('takeoff', Empty)
+            
+            rospy.loginfo("waiting for emergency service")
+            rospy.wait_for_service('emergency')
+            self._emergency = rospy.ServiceProxy('emergency', Empty)
         else:
             self._land = None
             self._takeoff = None
@@ -40,10 +44,11 @@ class Controller():
             if self._buttons == None or data.buttons[i] != self._buttons[i]:
                 if i == 0 and data.buttons[i] == 1 and self._land != None:
                     self._land()
-                #if i == 1 and data.buttons[i] == 1:
-                #    self._emergency()
-                if i == 2 and data.buttons[i] == 1 and self._takeoff != None:
+                elif i == 1 and data.buttons[i] == 1 and self._emergency !=None:
+                    self._emergency()
+                elif i == 2 and data.buttons[i] == 1 and self._takeoff != None:
                     self._takeoff()
+
                 #if i == 4 and data.buttons[i] == 1:
                 #    value = int(rospy.get_param("ring/headlightEnable"))
                 #    if value == 0:

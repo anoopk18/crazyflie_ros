@@ -17,10 +17,11 @@ from scipy.spatial.transform import Rotation
 import waypoint_traj as wt
 from mpc_control import MPControl
 from geometric_control import GeometriControl
+from scipy.interpolate import interp1d
 
 
 class MPCDemo():
-    def __init__(self):
+    def __init__(self, target_tracking, rebase):
         rospy.init_node('mpc_demo', anonymous=True)  # initializing node
         # self.m_serviceLand = rospy.Service('land', , self.landingService)
         # self.m_serviceTakeoff = rospy.Service('takeoff', , self.takeoffService)
@@ -29,23 +30,27 @@ class MPCDemo():
         quad_name = rospy.get_param("~frame")
         self.frame = quad_name + "/base_link"
         self.tf_listener = TransformListener()
-        
+        self.target_tracking = target_tracking
+        self.rebase = rebase
         # subscribers and publishers
-        self.rate = rospy.Rate(250)
+        self.rate = rospy.Rate(250) # was 250
         self.angular_vel = np.zeros([3,])  # angular velocity updated by imu subscriber
         self.curr_pos = np.zeros([3,])
         self.curr_quat = np.zeros([4,])
+        self.target_pos = np.zeros([3,])
+        self.target_vel = np.zeros([3,])
         self.est_vel_pub = rospy.Publisher('est_vel', TwistStamped, queue_size=1)  # publishing estimated velocity
         self.u_pub = rospy.Publisher('u_euler', TwistStamped, queue_size=1)  # publishing stamped 
         self.cmd_stamped_pub = rospy.Publisher('cmd_vel_stamped', TwistStamped, queue_size=1)  # publishing time stamped cmd_vel
         self.imu_sub = rospy.Subscriber('/crazyflie/imu', Imu, self.imu_callback)  # subscribing imu
         self.cmd_pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)  # publishing to cmd_vel to control crazyflie
-        self.goal_pub = rospy.Publisher('goal', TwistStamped, queue_size=1)  # publishing waypoints along the trajectory        
+        self.goal_pub = rospy.Publisher('goal', TwistStamped, queue_size=1)  # publishing waypoints along the trajectory
+        self.target_sub = rospy.Subscriber("/crazyflie/demo_target", PoseStamped, self.target_callback)     
         self.vicon_sub = rospy.Subscriber("/mocap_node/" + quad_name + "/pose", PoseStamped, self.vicon_callback)
         self.tf_pub = rospy.Publisher('tf_pos', PoseStamped, queue_size=1) 
         self.serviceTakeoff = rospy.Service('takeoff', Empty, self.takeoffService)
         self.serviceLand = rospy.Service('land', Empty, self.landingService)
-
+        self.serviceEmergency = rospy.Service('emergency', Empty, self.emergencyService)
         # controller and waypoints
         self.m_state = 0 # Idle: 0, Automatic: 1, TakingOff: 2, Landing: 3
         self.m_thrust = 0
@@ -64,18 +69,16 @@ class MPCDemo():
         #print("points shape", points.shape)
         #points[-1, 2] = 0.2 #final landing height - > convert to a rosservice
         #print("final points shape", points.shape)
+        self.base_pos = np.array([1.02, -0.38, 0.21])
         updown_points = np.array([  # points for generating trajectory
-                           [0.96, -0.4169, 0.21],
-                           [0.96, -0.4200, 0.41],
-                           [0.96, -0.4200, 0.61],
-                           [0.96, -1.512, 0.61],
-                           [0.96, -2.5, 0.61],
-                           [0.96, -0.420, 0.61],
-                           [0.96, -2.5, 0.61],
-                           [0.96, -1.512, 0.61],
-                           [0.96, -0.4200, 0.61],
-                           [0.96, -0.4200, 0.41],
-                           [0.96, -0.4169, 0.21]])
+                           [1.02, -0.40, 0.21],
+                           [1.02, -0.420, 0.41],
+                           [1.02, -0.420, 0.52],
+                           [1.02, -1.512, 0.53],
+                           [1.02, -0.420, 0.54],
+                           [1.02, -0.420, 0.53],
+                           [1.02, -0.400, 0.42],
+                           [1.02, -0.38, 0.21]])
         #points = np.array([[0.2172, 4.5455, 0.5],
         #                   [0.2172, 4.5455, 0.6]])
         #-----GENERATE TAKEOFF AND LANDING TRAJECTORY
@@ -83,7 +86,7 @@ class MPCDemo():
         self.takeoff_z = points[0, :]
         takeoff_points = np.vstack((np.array([points[0, 0], points[0, 1], 0]), self.takeoff_z))
         self.traj_takeoff = self.generate_traj(takeoff_points)
-        land_points = np.vstack((points[-1, :], np.array([points[-1, 0], points[-1, 1], 0.2]))) # let the ending point be at the same x y location with height 0.2
+        land_points = np.vstack((points[-1, :], np.array([points[-1, 0], points[-1, 1], 0.1]))) # let the ending point be at the same x y location with height 0.2
         self.traj_land = self.generate_traj(land_points)
         
         #-----GENERATE MAIN TRAJECTORY
@@ -120,76 +123,12 @@ class MPCDemo():
         self.curr_quat[2] = data.pose.orientation.z
         self.curr_quat[3] = data.pose.orientation.w
         
-            
-    #-----TRAJECTORY CONTROL 
-    def traj_control(self, traj):
-        curr_time = rospy.get_time()
-        dt = curr_time - self.prev_time
-        flat = self.sanitize_trajectory_dic(traj.update(curr_time-self.t0))
-
-        #transform = TransformStamped()  # for getting transforms
-        self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
-        t = self.tf_listener.getLatestCommonTime(self.frame, self.worldFrame)
-        (tf_pos, tf_quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, t)  # position and quaternion in world frame
-        vicon_pos = self.curr_pos
-        vicon_quat = self.curr_quat
-        pos = tf_pos
-        quat = tf_quat
-
-        v = (np.array(pos)-np.array(self.prev_pos))/dt  # velocity estimate
-        #print("prev pos\n", self.prev_pos) 
-        v_est_sum = np.sum(v)
-        if v_est_sum == 0.0:
-            v = self.prev_vel
-        # clipping
-        v[0:2] = np.clip(v[0:2], -0.7, 0.6)
-        v[2] = np.clip(v[2], -0.2, 0.2)
-        #print(v)
-        curr_state = {
-                    'x': np.array(pos),
-                    'v': v,
-                    'q': np.array(quat),
-                    'w': self.angular_vel}
- 
-        # controller update
-        u = self.controller.update(curr_time, curr_state, flat)
-        roll = u['euler'][0]
-        pitch = u['euler'][1]
-        yaw = u['euler'][2]
-        thrust = u['cmd_thrust']
-        r_ddot_des = u['r_ddot_des']
-        u1 = u['cmd_thrust']
-
-  
-        def map_u1(u1):
-            # u1 ranges from -0.2 to 0.2
-            trim_cmd = 42000 # 42000 for old quad
-            min_cmd = 10000 # 10000 for old quad
-            u1_trim = 0.327
-            c = min_cmd
-            m = (trim_cmd - min_cmd)/u1_trim
-            mapped_u1 = u1*m + c
-            if mapped_u1 > 60000:
-                mapped_u1 = 60000
-            return mapped_u1
-
-
-        # publish command
-        msg = Twist()
-        msg.linear.x = np.clip(np.degrees(pitch), -10., 10.)  # pitch
-        msg.linear.y = np.clip(np.degrees(roll), -10., 10.)  # roll
-        msg.linear.z = map_u1(thrust)
-        msg.angular.z = np.degrees(0.) # hardcoding yawrate to be 0 for now
-        self.cmd_pub.publish(msg) # publishing msg to the crazyflie
-
-        self.log_ros_info(roll, pitch, yaw, r_ddot_des, v, msg, flat, tf_pos, tf_quat, u1)
-        if v_est_sum != 0:
-            self.prev_vel = v
-            self.prev_time = curr_time
-            self.prev_pos = pos  
-        return traj     
-
-
+    def target_callback(self, data):
+        self.target_pos[0] = data.pose.position.x
+        self.target_pos[1] = data.pose.position.y
+        self.target_pos[2] = data.pose.position.z
+        self.target_vel[0] = data.pose.orientation.x
+        self.target_vel[1] = data.pose.orientation.y
 
     def generate_traj(self, points):
         '''
@@ -206,6 +145,13 @@ class MPCDemo():
         self.t0 = rospy.get_time()
         return EmptyResponse()
 
+    def emergencyService(self, req):
+        rospy.loginfo("Emergency requested!")
+        self.m_state = 0
+        self.prev_time = rospy.get_time()
+        self.t0 = rospy.get_time()
+        return EmptyResponse()
+
     def landingService(self, req):
         rospy.loginfo("Land requested!")
 
@@ -216,32 +162,75 @@ class MPCDemo():
 
     def takeoff(self):
         rospy.loginfo("Taking off")
-        self.traj_takeoff = self.traj_control(self.traj_takeoff)
-        #rospy.loginfo(self.takeoff_z[2])
-        #rospy.loginfo(self.prev_pos[2])
+        self.track_traj(self.traj_takeoff)
         # listen for quad position
         self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
         t = self.tf_listener.getLatestCommonTime(self.frame, self.worldFrame)
         (tf_pos, tf_quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, t)  # position and quaternion in world frame
         if self.prev_pos[2] >= tf_pos[2]: # lowering the height temporarily
-            print('automatic state reached')
             self.m_state = 1 # switch to automatic
             self.prev_time = rospy.get_time()
             self.t0 = rospy.get_time()
 
     def land(self):
-        rospy.loginfo("landing")
-        self.traj_land = self.traj_control(self.traj_land)
-        if self.prev_pos[2] <= 0.2:
-            self.m_state = 0
-            msg = Twist()
-            self.cmd_pub.publish(msg)
-    
+        # if performing targeting tracking
+        if self.target_tracking:
+            interp_time = [1,5]
+            end_pos = self.target_pos + 0.8*self.target_vel
+            points = interp1d(interp_time, np.vstack([self.curr_pos, end_pos]), axis=0)([1, 2, 3, 4, 5])
+            traj = self.generate_traj(points)
+            self.track_traj(traj)
+            if self.curr_pos[2] - self.target_pos[2] <= 0.07:
+                msg = Twist()
+                self.cmd_pub.publish(msg)
+                if self.rebase:
+                    time.sleep(5)
+                else:
+                    self.m_state = 0
+        # if follow specified waypoints
+        else:
+            self.track_traj(self.traj_land)
+            if self.prev_pos[2] <= 0.2:
+                self.m_state = 0
+                msg = Twist()
+                self.cmd_pub.publish(msg)
+        
+        # TODO if need to return to launch pad
+        if self.rebase:
+            interp_time = [1,5]
+            points = interp1d(interp_time, np.vstack([self.curr_pos, self.base_pos]), axis=0)([1,2,3,4,5])
+            points[:, 2] = 0.5
+            points[-1, 2] = self.base_pos[2]
+
+            traj = self.generate_traj(points)
+            self.track_traj(traj)
+
+            if np.abs(self.curr_pos[0] -self.base_pos[0]) <=0.03 and np.abs(self.curr_pos[1] - self.base_pos[1]) <=0.03 and self.curr_pos[2] - self.base_pos[2] <= 0.15:
+                self.m_state = 0
+                msg = Twist()
+                self.cmd_pub.publish(msg)
+                self.rebase = False
+
     
     def automatic(self):
+        if self.target_tracking:
+            interp_time = [1,5]
+            end_pos = self.target_pos + 0.8*self.target_vel
+            points = interp1d(interp_time, np.vstack([self.curr_pos, end_pos]), axis=0)([1,2,3,4,5])
+            points[:, 2] = 0.3
+            points[:, 0] += 0.1
+            traj = self.generate_traj(points)
+        else:
+            traj = self.traj
+
+        self.track_traj(traj)
+ 
+
+    def track_traj(self, traj):
         curr_time = rospy.get_time()
         dt = curr_time - self.prev_time
-        flat = self.sanitize_trajectory_dic(self.traj.update(curr_time-self.t0))
+        	
+        flat = self.sanitize_trajectory_dic(traj.update(curr_time-self.t0))
 
         transform = TransformStamped()  # for getting transforms
         self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
@@ -253,14 +242,12 @@ class MPCDemo():
         quat = tf_quat
 
         v = (np.array(pos)-np.array(self.prev_pos))/dt  # velocity estimate
-        #print("prev pos\n", self.prev_pos) 
         v_est_sum = np.sum(v)
         if v_est_sum == 0.0:
             v = self.prev_vel
         # clipping
         v[0:2] = np.clip(v[0:2], -0.7, 0.6)
         v[2] = np.clip(v[2], -0.2, 0.2)
-        #print(v)
         curr_state = {
                     'x': np.array(pos),
                     'v': v,
@@ -279,14 +266,14 @@ class MPCDemo():
   
         def map_u1(u1):
             # u1 ranges from -0.2 to 0.2
-            trim_cmd = 42000
-            min_cmd = 10000
+            trim_cmd = 51000
+            min_cmd = 25000
             u1_trim = 0.327
             c = min_cmd
             m = (trim_cmd - min_cmd)/u1_trim
             mapped_u1 = u1*m + c
-            if mapped_u1 > 60000:
-                mapped_u1 = 60000
+            if mapped_u1 > 62000:
+                mapped_u1 = 62000
             return mapped_u1
 
 
@@ -308,10 +295,8 @@ class MPCDemo():
         while rospy.get_time() - self.t0 <= 3:
             msg = Twist()
             self.cmd_pub.publish(msg)
-        #self.m_state = 1
         self.prev_time = rospy.get_time()
         self.t0 = rospy.get_time()
-        #print(self.curr_pos)
 
         # temporarily print out stuff for debugging
         #self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
@@ -359,11 +344,11 @@ class MPCDemo():
         """
         Return a sanitized version of the trajectory dictionary where all of the elements are np arrays
         """
-        trajectory_dic['x'] = np.asarray(trajectory_dic['x'], np.float).ravel()
-        trajectory_dic['x_dot'] = np.asarray(trajectory_dic['x_dot'], np.float).ravel()
-        trajectory_dic['x_ddot'] = np.asarray(trajectory_dic['x_ddot'], np.float).ravel()
-        trajectory_dic['x_dddot'] = np.asarray(trajectory_dic['x_dddot'], np.float).ravel()
-        trajectory_dic['x_ddddot'] = np.asarray(trajectory_dic['x_ddddot'], np.float).ravel()
+        trajectory_dic['x'] = np.asarray(trajectory_dic['x'], float).ravel()
+        trajectory_dic['x_dot'] = np.asarray(trajectory_dic['x_dot'], float).ravel()
+        trajectory_dic['x_ddot'] = np.asarray(trajectory_dic['x_ddot'], float).ravel()
+        trajectory_dic['x_dddot'] = np.asarray(trajectory_dic['x_dddot'], float).ravel()
+        trajectory_dic['x_ddddot'] = np.asarray(trajectory_dic['x_ddddot'], float).ravel()
 
         return trajectory_dic
 
@@ -431,7 +416,9 @@ class MPCDemo():
         self.tf_pub.publish(tf_pose_msg)
 
 if __name__ == '__main__':
-    mpc_demo = MPCDemo()
+    target_tracking = True
+    rebase = False
+    mpc_demo = MPCDemo(target_tracking, rebase)
     mpc_demo.run()
     rospy.spin()
         

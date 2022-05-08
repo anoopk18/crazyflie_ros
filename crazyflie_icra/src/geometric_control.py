@@ -23,7 +23,7 @@ class GeometriControl(object):
         self.pos_kp = 2.0
         self.pos_kd = 2 * 1.0 * np.sqrt(self.pos_kp)
         self.posz_kp = 4.0  # was 4
-        self.posz_kd = 2.4  # was 2.4
+        self.posz_kd = 4.8  # was 2.4
         self.pos_kp_mat = np.diag(np.array([self.pos_kp, self.pos_kp, self.posz_kp]))
         self.pos_kd_mat = np.diag(np.array([self.pos_kd, self.pos_kd, self.posz_kd]))
         self.att_rollpitch_kp = 9

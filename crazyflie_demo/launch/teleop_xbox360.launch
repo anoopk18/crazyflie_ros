@@ -13,6 +13,8 @@
       <arg name="uri" value="$(arg uri)" />
       <arg name="tf_prefix" value="crazyflie" />
       <arg name="enable_logging" value="True" />
+      <arg name="roll_trim" value="-2.50" />
+      <arg name="pitch_trim" value="-0.00" />
     </include>
 
     <node name="joy" pkg="joy" type="joy_node" output="screen" >

@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <launch>
   <arg name="uri" default="radio://0/80/2M" />
-  <arg name="frame" default="/crazyflie_mpc3" />
+  <arg name="frame" default="/crazy_mpc1" />
   <arg name="joy_dev" default="/dev/input/js0" />
-  <arg name="x" default="-0.26" />
-  <arg name="y" default="3.75" />
+  <arg name="x" default="-0.172" />
+  <arg name="y" default="3.49" />
   <arg name="z" default="0.5" />
 
   <include file="$(find crazyflie_driver)/launch/crazyflie_server.launch">
@@ -15,6 +15,7 @@
       <arg name="uri" value="$(arg uri)" />
       <arg name="tf_prefix" value="crazyflie" />
       <arg name="enable_logging" value="True" />
+      <arg name="roll_trim" value="-1.0" />
     </include>
 
     <node name="joy" pkg="joy" type="joy_node" output="screen">

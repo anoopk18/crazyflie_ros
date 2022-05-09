@@ -32,6 +32,7 @@ class MPCDemo():
         self.tf_listener = TransformListener()
         self.target_tracking = target_tracking
         self.rebase = rebase
+        self.returning_to_base = False
         # subscribers and publishers
         self.rate = rospy.Rate(250) # was 250
         self.angular_vel = np.zeros([3,])  # angular velocity updated by imu subscriber
@@ -102,7 +103,7 @@ class MPCDemo():
         self.prev_time = rospy.get_time()
         self.prev_pos = self.initial_state['x']
         self.prev_vel = np.zeros([3,])
-        rospy.loginfo("=============== MPC Demo Initialized ===============")
+        rospy.loginfo("=============== Demo Initialized ===============")
     
     def imu_callback(self, data):
         '''
@@ -159,7 +160,8 @@ class MPCDemo():
         self.prev_time = rospy.get_time()
         self.t0 = rospy.get_time()
         return EmptyResponse()
-
+    
+    # m_state: 2
     def takeoff(self):
         rospy.loginfo("Taking off")
         self.track_traj(self.traj_takeoff)
@@ -171,10 +173,11 @@ class MPCDemo():
             self.m_state = 1 # switch to automatic
             self.prev_time = rospy.get_time()
             self.t0 = rospy.get_time()
-
+    
+    # m_state: 3
     def land(self):
         # if performing targeting tracking
-        if self.target_tracking:
+        if self.target_tracking and not self.returning_to_base:
             interp_time = [1,5]
             end_pos = self.target_pos + 0.8*self.target_vel
             points = interp1d(interp_time, np.vstack([self.curr_pos, end_pos]), axis=0)([1, 2, 3, 4, 5])
@@ -184,34 +187,42 @@ class MPCDemo():
                 msg = Twist()
                 self.cmd_pub.publish(msg)
                 if self.rebase:
-                    time.sleep(5)
+                    self.m_state = 4
+                    interp_time = [1,5]
+                    points = interp1d(interp_time, np.vstack([self.curr_pos, self.base_pos]), axis=0)([1,2,3,4,5])
+                    points[:, 2] = 0.5
+                    points[-1, 2] = self.base_pos[2] + 0.05
+                    self.traj = self.generate_traj(points)
+                    #rospy.sleep(5.0)
+
                 else:
                     self.m_state = 0
+            
         # if follow specified waypoints
         else:
             self.track_traj(self.traj_land)
             if self.prev_pos[2] <= 0.2:
+                self.returning_to_base = False
                 self.m_state = 0
                 msg = Twist()
                 self.cmd_pub.publish(msg)
         
-        # TODO if need to return to launch pad
-        if self.rebase:
-            interp_time = [1,5]
-            points = interp1d(interp_time, np.vstack([self.curr_pos, self.base_pos]), axis=0)([1,2,3,4,5])
-            points[:, 2] = 0.5
-            points[-1, 2] = self.base_pos[2]
-
-            traj = self.generate_traj(points)
-            self.track_traj(traj)
-
-            if np.abs(self.curr_pos[0] -self.base_pos[0]) <=0.03 and np.abs(self.curr_pos[1] - self.base_pos[1]) <=0.03 and self.curr_pos[2] - self.base_pos[2] <= 0.15:
-                self.m_state = 0
-                msg = Twist()
-                self.cmd_pub.publish(msg)
-                self.rebase = False
-
+    def return_to_base(self):
+        # return to launch pad
+                # self.m_state = 1
+        # self.prev_pos = self.curr_pos
+        # self.prev_time = rospy.get_time()
+        # self.t0 = rospy.get_time()
+        self.track_traj(self.traj)
+        
+        if np.abs(self.curr_pos[0] -self.base_pos[0]) <=0.1 and np.abs(self.curr_pos[1] - self.base_pos[1]) <=0.1 and self.curr_pos[2] - self.base_pos[2] <= 0.15:
+            # self.rebase = False
+            self.m_state = 3
+            self.returning_to_base = True
+            # msg = Twist()
+            # self.cmd_pub.publish(msg)
     
+    # m_state: 1
     def automatic(self):
         if self.target_tracking:
             interp_time = [1,5]
@@ -336,6 +347,9 @@ class MPCDemo():
             
             elif self.m_state == 2:
                 self.takeoff()
+       
+            elif self.m_state == 4:
+                self.return_to_base()     
             
             #self.rate.sleep()
             
@@ -417,7 +431,7 @@ class MPCDemo():
 
 if __name__ == '__main__':
     target_tracking = True
-    rebase = False
+    rebase = True
     mpc_demo = MPCDemo(target_tracking, rebase)
     mpc_demo.run()
     rospy.spin()

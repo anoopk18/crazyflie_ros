@@ -15,6 +15,8 @@
     <include file="$(find crazyflie_driver)/launch/crazyflie_add.launch">
       <arg name="uri" value="$(arg uri)" />
       <arg name="tf_prefix" value="crazyflie" />
+      <arg name="roll_trim" value="5.0" />
+      <arg name="pitch_trim value" = "2.0"/>
       <arg name="enable_logging" value="True" />
     </include>
 

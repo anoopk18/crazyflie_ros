@@ -18,7 +18,7 @@ from mpc_control import MPControl
 from hybrid_control import HybridControl
 from geometric_control import GeometriControl
 from gp_control import GPControl
-
+from scipy.interpolate import interp1d
 
 class MPCDemo():
     def __init__(self):
@@ -27,7 +27,7 @@ class MPCDemo():
         # self.m_serviceTakeoff = rospy.Service('takeoff', , self.takeoffService)
         # frames and transforms
         self.worldFrame = rospy.get_param("~world_frame", "world")
-        quad_name = "crazyflie_mpc"
+        quad_name = rospy.get_param("~frame")
         self.frame = quad_name
         #self.frame = rospy.get_param("~frame")
         self.tf_listener = TransformListener()
@@ -36,6 +36,7 @@ class MPCDemo():
         self.rate = rospy.Rate(370)
         self.angular_vel = np.zeros([3,])  # angular velocity updated by imu subscriber
         self.curr_pos = np.zeros([3,])
+        self.target_pos = np.zeros([3,])
         self.curr_quat = np.zeros([4,])
         self.est_vel_pub = rospy.Publisher('est_vel', TwistStamped, queue_size=1)  # publishing estimated velocity
         self.u_pub = rospy.Publisher('u_euler', TwistStamped, queue_size=1)  # publishing stamped 
@@ -43,9 +44,10 @@ class MPCDemo():
         self.imu_sub = rospy.Subscriber('/crazyflie/imu', Imu, self.imu_callback)  # subscribing imu
         self.cmd_pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)  # publishing to cmd_vel to control crazyflie
         self.goal_pub = rospy.Publisher('goal', TwistStamped, queue_size=1)  # publishing waypoints along the trajectory        
+        self.target_sub = rospy.Subscriber("/vicon/crazy_target/pose", PoseStamped, self.target_callback)
         self.vicon_sub = rospy.Subscriber("/vicon/" + quad_name + "/pose", PoseStamped, self.vicon_callback) 
         self.tf_pub = rospy.Publisher('tf_pos', PoseStamped, queue_size=1)
-        # controller and waypoints
+        # controller and waypoint, PoseStamped, self.target_callbacks
         self.m_state = 0 # Idle: 0, Automatic: 1, TakingOff: 2, Landing: 3
         self.m_thrust = 0
         self.m_startZ = 0
@@ -101,7 +103,7 @@ class MPCDemo():
         self.traj = self.generate_traj(points)  # trajectory
         
         ############# CONTROLLER ########### 
-        self.controller = GPControl()  # controller
+        self.controller = GeometriControl()  # controller
         
         self.initial_state = {'x': np.array([0, 0, 0]), # positions
                               'v': np.array([0, 0, 0]), # velocities
@@ -134,6 +136,13 @@ class MPCDemo():
         self.curr_quat[1] = data.pose.orientation.y
         self.curr_quat[2] = data.pose.orientation.z
         self.curr_quat[3] = data.pose.orientation.w
+
+
+    def target_callback(self, data):
+        self.target_pos[0] = data.pose.position.x
+        self.target_pos[1] = data.pose.position.y
+        self.target_pos[2] = data.pose.position.z
+
 
     def takeoff(self, req):  # TODO
         transform = Transformstamped()
@@ -168,9 +177,17 @@ class MPCDemo():
             msg = Twist()
             self.cmd_pub.publish(msg)
     
-    def automatic(self):  # running MPC
+    def automatic(self, target_tracking):  # running MPC
         curr_time = rospy.get_time()
         dt = curr_time - self.prev_time
+        if target_tracking:
+            interp_time = [1,4]
+            # print("self:, target:", self.curr_pos, self.target_pos)
+            points = interp1d(interp_time, np.vstack([self.curr_pos, self.target_pos]), axis=0)([1,2,3,4])
+            
+            points[:, 2] += 0.35
+            self.traj = self.generate_traj(points)
+
         flat = self.sanitize_trajectory_dic(self.traj.update(curr_time-self.t0))
 
         transform = TransformStamped()  # for getting transforms
@@ -207,8 +224,8 @@ class MPCDemo():
 
         def map_u1(u1):  # mapping control thrust output to cmd_vel thrust
             # u1 ranges from -0.2 to 0.2
-            trim_cmd = 43000
-            min_cmd = 10000
+            trim_cmd = 53000 # was 43000
+            min_cmd = 20000 # was 10000
             u1_trim = 0.327
             c = min_cmd
             m = (trim_cmd - min_cmd)/u1_trim
@@ -264,7 +281,7 @@ class MPCDemo():
         self.t0 = rospy.get_time()
 
 
-    def run(self):
+    def run(self, target_tracking):
         '''
         State machine loop
         '''
@@ -276,7 +293,7 @@ class MPCDemo():
                 self.land()
             
             elif self.m_state == 1:
-                self.automatic()
+                self.automatic(target_tracking)
             
             elif self.m_state == 2:
                 self.takeoff()
@@ -288,11 +305,11 @@ class MPCDemo():
         """
         Return a sanitized version of the trajectory dictionary where all of the elements are np arrays
         """
-        trajectory_dic['x'] = np.asarray(trajectory_dic['x'], np.float).ravel()
-        trajectory_dic['x_dot'] = np.asarray(trajectory_dic['x_dot'], np.float).ravel()
-        trajectory_dic['x_ddot'] = np.asarray(trajectory_dic['x_ddot'], np.float).ravel()
-        trajectory_dic['x_dddot'] = np.asarray(trajectory_dic['x_dddot'], np.float).ravel()
-        trajectory_dic['x_ddddot'] = np.asarray(trajectory_dic['x_ddddot'], np.float).ravel()
+        trajectory_dic['x'] = np.asarray(trajectory_dic['x'], float).ravel()
+        trajectory_dic['x_dot'] = np.asarray(trajectory_dic['x_dot'], float).ravel()
+        trajectory_dic['x_ddot'] = np.asarray(trajectory_dic['x_ddot'], float).ravel()
+        trajectory_dic['x_dddot'] = np.asarray(trajectory_dic['x_dddot'], float).ravel()
+        trajectory_dic['x_ddddot'] = np.asarray(trajectory_dic['x_ddddot'], float).ravel()
         return trajectory_dic
 
 
@@ -361,6 +378,7 @@ class MPCDemo():
 
 if __name__ == '__main__':
     mpc_demo = MPCDemo()
-    mpc_demo.run()
+    target_tracking = True
+    mpc_demo.run(target_tracking)
     rospy.spin()
         

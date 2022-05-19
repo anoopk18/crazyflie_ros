@@ -23,17 +23,20 @@ from scipy.interpolate import interp1d
 
 
 class MPCDemo():
-    def __init__(self, target_tracking, rebase):
+    def __init__(self):
         rospy.init_node('mpc_demo', anonymous=True)  # initializing node
         # self.m_serviceLand = rospy.Service('land', , self.landingService)
         # self.m_serviceTakeoff = rospy.Service('takeoff', , self.takeoffService)
         # frames and transforms
         self.worldFrame = rospy.get_param("~world_frame", "world")
+        target_tracking = rospy.get_param("~target_tracking", "false")
+        print("test: ", target_tracking)
         quad_name = rospy.get_param("~frame")
         self.frame = quad_name + "/base_link"
         self.tf_listener = TransformListener()
         self.target_tracking = target_tracking
-        self.rebase = rebase
+        if self.target_tracking:
+            self.rebase = True
         self.returning_to_base = False
         # subscribers and publishers
         self.rate = rospy.Rate(250) # was 250
@@ -69,7 +72,7 @@ class MPCDemo():
   
         z_traj = np.zeros((len(t_plot),)) + 0.4111
         circle_points = np.stack((x_traj, y_traj, z_traj), axis=1)
-        #print(points)
+        print("check bool:", self.target_tracking)
         #print("points shape", points.shape)
         #points[-1, 2] = 0.2 #final landing height - > convert to a rosservice
         #print("final points shape", points.shape)
@@ -434,9 +437,7 @@ class MPCDemo():
         self.tf_pub.publish(tf_pose_msg)
 
 if __name__ == '__main__':
-    target_tracking = True
-    rebase = True
-    mpc_demo = MPCDemo(target_tracking, rebase)
+    mpc_demo = MPCDemo()
     mpc_demo.run()
     rospy.spin()
         

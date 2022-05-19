@@ -1,9 +1,10 @@
 <?xml version="1.0"?>
 <launch>
   <arg name="uri" default="radio://0/80/2M" />
-  <arg name="frame" default="crazy_mpc2" />
+  <arg name="frame" default="crazy_mpc3" />
   <arg name="world_frame" default="world"/>
   <arg name="joy_dev" default="/dev/input/js0" />
+  <arg name="target_tracking" default="false"/>
 
   <!-- run optitrack bridge -->
   <include file="$(find mocap_optitrack)/launch/mocap.launch"/>
@@ -29,6 +30,7 @@
     <node name="icra_demo" pkg="crazyflie_icra" type="follow_waypoint.py" output="screen">
         <param name="frame"  value="$(arg frame)"/>
         <param name="world_frame" value="$(arg world_frame)"/>
+        <param name="target_tracking" value="$(arg target_tracking)"/>
     </node>
 
     <node pkg="tf" type="static_transform_publisher" name="baselink_broadcaster" args="0 0 0 0 0 0 1 $(arg frame) /crazyflie/base_link 100" />

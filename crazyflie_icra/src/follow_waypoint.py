@@ -3,6 +3,8 @@ import numpy as np
 import rospy
 import tf2_ros as tf
 import time
+from waypoints import tinyboat_trajs
+from yaw_pid import YawPID
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import TwistStamped
 from geometry_msgs.msg import TransformStamped
@@ -40,6 +42,7 @@ class MPCDemo():
         self.curr_quat = np.zeros([4,])
         self.target_pos = np.zeros([3,])
         self.target_vel = np.zeros([3,])
+        self.yaw_pid = YawPID()
         self.est_vel_pub = rospy.Publisher('est_vel', TwistStamped, queue_size=1)  # publishing estimated velocity
         self.u_pub = rospy.Publisher('u_euler', TwistStamped, queue_size=1)  # publishing stamped 
         self.cmd_stamped_pub = rospy.Publisher('cmd_vel_stamped', TwistStamped, queue_size=1)  # publishing time stamped cmd_vel
@@ -70,24 +73,16 @@ class MPCDemo():
         #print("points shape", points.shape)
         #points[-1, 2] = 0.2 #final landing height - > convert to a rosservice
         #print("final points shape", points.shape)
-        self.base_pos = np.array([1.02, -0.38, 0.21])
-        updown_points = np.array([  # points for generating trajectory
-                           [1.02, -0.40, 0.21],
-                           [1.02, -0.420, 0.41],
-                           [1.02, -0.420, 0.52],
-                           [1.02, -1.512, 0.53],
-                           [1.02, -0.420, 0.54],
-                           [1.02, -0.420, 0.53],
-                           [1.02, -0.400, 0.42],
-                           [1.02, -0.38, 0.21]])
+        self.base_pos = tinyboat_trajs["right_base"]
         #points = np.array([[0.2172, 4.5455, 0.5],
         #                   [0.2172, 4.5455, 0.6]])
         #-----GENERATE TAKEOFF AND LANDING TRAJECTORY
-        points = updown_points
-        self.takeoff_z = points[0, :]
+        points = tinyboat_trajs["traj3"]
+        self.takeoff_z = self.base_pos
+        self.takeoff_z[2] = 0.3
         takeoff_points = np.vstack((np.array([points[0, 0], points[0, 1], 0]), self.takeoff_z))
         self.traj_takeoff = self.generate_traj(takeoff_points)
-        land_points = np.vstack((points[-1, :], np.array([points[-1, 0], points[-1, 1], 0.1]))) # let the ending point be at the same x y location with height 0.2
+        land_points = np.vstack((self.base_pos, np.array([self.base_pos[0], self.base_pos[1], 0.1]))) # let the ending point be at the same x y location with height 0.2
         self.traj_land = self.generate_traj(land_points)
         
         #-----GENERATE MAIN TRAJECTORY
@@ -163,13 +158,13 @@ class MPCDemo():
     
     # m_state: 2
     def takeoff(self):
-        rospy.loginfo("Taking off")
+        #rospy.loginfo("Taking off")
         self.track_traj(self.traj_takeoff)
         # listen for quad position
         self.tf_listener.waitForTransform(self.worldFrame, self.frame, rospy.Time(), rospy.Duration(20.0))
         t = self.tf_listener.getLatestCommonTime(self.frame, self.worldFrame)
         (tf_pos, tf_quat) = self.tf_listener.lookupTransform(self.worldFrame, self.frame, t)  # position and quaternion in world frame
-        if self.prev_pos[2] >= tf_pos[2]: # lowering the height temporarily
+        if self.curr_pos[2] >= 0.14: # lowering the height temporarily
             self.m_state = 1 # switch to automatic
             self.prev_time = rospy.get_time()
             self.t0 = rospy.get_time()
@@ -179,43 +174,49 @@ class MPCDemo():
         # if performing targeting tracking
         if self.target_tracking and not self.returning_to_base:
             interp_time = [1,5]
-            end_pos = self.target_pos + 0.8*self.target_vel
+            end_pos = self.target_pos + 0.95*self.target_vel
             points = interp1d(interp_time, np.vstack([self.curr_pos, end_pos]), axis=0)([1, 2, 3, 4, 5])
+            # offset in x and y
+            points[:, 0] += 0.03
+            points[:, 1] += 0.12
             traj = self.generate_traj(points)
             self.track_traj(traj)
-            if self.curr_pos[2] - self.target_pos[2] <= 0.07:
+            if self.curr_pos[2] - self.target_pos[2] <= 0.07 and np.abs(self.curr_pos[0] - self.target_pos[0]) <= 0.05 and np.abs(self.curr_pos[1] - self.target_pos[1]) <= 0.05:
                 msg = Twist()
                 self.cmd_pub.publish(msg)
                 if self.rebase:
                     self.m_state = 4
-                    interp_time = [1,5]
-                    points = interp1d(interp_time, np.vstack([self.curr_pos, self.base_pos]), axis=0)([1,2,3,4,5])
-                    points[:, 2] = 0.5
-                    points[-1, 2] = self.base_pos[2] + 0.05
+                    curr_time = rospy.get_time()
+                    while rospy.get_time() - curr_time < 5.0:
+                        self.cmd_pub.publish(msg)
+
+                    interp_time = [1,6]
+                    points = interp1d(interp_time, np.vstack([self.curr_pos, self.base_pos]), axis=0)([1,2,3,4,5,6])
+                    points[:, 2] = 0.3
+                    points[1, 2] = self.curr_pos[2] + 0.35
+                    points[-1, 2] = self.base_pos[2] + 0.17
                     self.traj = self.generate_traj(points)
-                    #rospy.sleep(5.0)
+                    self.t0 = rospy.get_time()
 
                 else:
                     self.m_state = 0
             
         # if follow specified waypoints
         else:
+            #print("back to normal landing!")
             self.track_traj(self.traj_land)
-            if self.prev_pos[2] <= 0.2:
+            if self.curr_pos[2] <= self.base_pos[2] + 0.1 and np.abs(self.curr_pos[0] - self.base_pos[0]) <= 0.05 and np.abs(self.curr_pos[0]-self.base_pos[0]) <= 0.05:
                 self.returning_to_base = False
                 self.m_state = 0
                 msg = Twist()
                 self.cmd_pub.publish(msg)
-        
+
+    # m_state: 4        
     def return_to_base(self):
-        # return to launch pad
-                # self.m_state = 1
-        # self.prev_pos = self.curr_pos
-        # self.prev_time = rospy.get_time()
-        # self.t0 = rospy.get_time()
+        #print("returning to base")
         self.track_traj(self.traj)
         
-        if np.abs(self.curr_pos[0] -self.base_pos[0]) <=0.1 and np.abs(self.curr_pos[1] - self.base_pos[1]) <=0.1 and self.curr_pos[2] - self.base_pos[2] <= 0.15:
+        if np.abs(self.curr_pos[0] -self.base_pos[0]) <=0.1 and np.abs(self.curr_pos[1] - self.base_pos[1]) <=0.1 and self.curr_pos[2] <= self.base_pos[2] + 0.1:
             # self.rebase = False
             self.m_state = 3
             self.returning_to_base = True
@@ -229,7 +230,9 @@ class MPCDemo():
             end_pos = self.target_pos + 0.8*self.target_vel
             points = interp1d(interp_time, np.vstack([self.curr_pos, end_pos]), axis=0)([1,2,3,4,5])
             points[:, 2] = 0.3
-            points[:, 0] += 0.1
+            # offset in x and y
+            points[:, 0] += 0.03
+            points[:, 1] += 0.12
             traj = self.generate_traj(points)
         else:
             traj = self.traj
@@ -267,6 +270,7 @@ class MPCDemo():
  
         # controller update
         u = self.controller.update(curr_time, curr_state, flat)
+        u_yaw  = self.yaw_pid.compute_control(quat)
         roll = u['euler'][0]
         pitch = u['euler'][1]
         yaw = u['euler'][2]
@@ -293,8 +297,8 @@ class MPCDemo():
         msg.linear.x = np.clip(np.degrees(pitch), -10., 10.)  # pitch
         msg.linear.y = np.clip(np.degrees(roll), -10., 10.)  # roll
         msg.linear.z = map_u1(thrust)
-        msg.angular.z = np.degrees(0.) # hardcoding yawrate to be 0 for now
-        self.cmd_pub.publish(msg) # publishing msg to the crazyflie
+        msg.angular.z = u_yaw  # hardcoding yawrate to be 0 for now
+        self.cmd_pub.publish(msg)  # publishing msg to the crazyflie
 
         self.log_ros_info(roll, pitch, yaw, r_ddot_des, v, msg, flat, tf_pos, tf_quat, u1)
         if v_est_sum != 0:

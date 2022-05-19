@@ -4,7 +4,7 @@
   <arg name="frame" default="crazy_mpc3" />
   <arg name="world_frame" default="world"/>
   <arg name="joy_dev" default="/dev/input/js0" />
-  <arg name="target_name" default="crazy_target"/>
+  <arg name="target_name" default="modboats"/>
 
   <!-- run optitrack bridge -->
   <include file="$(find mocap_optitrack)/launch/mocap.launch"/>

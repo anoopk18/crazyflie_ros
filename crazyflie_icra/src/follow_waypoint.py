@@ -12,7 +12,7 @@ from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Vector3
 from sensor_msgs.msg import Imu
 from tf import TransformListener
-from std_msgs.msg import String
+from std_msgs.msg import String, Float32
 from std_srvs.srv import Empty, EmptyResponse
 
 from scipy.spatial.transform import Rotation
@@ -25,12 +25,8 @@ from scipy.interpolate import interp1d
 class MPCDemo():
     def __init__(self):
         rospy.init_node('mpc_demo', anonymous=True)  # initializing node
-        # self.m_serviceLand = rospy.Service('land', , self.landingService)
-        # self.m_serviceTakeoff = rospy.Service('takeoff', , self.takeoffService)
-        # frames and transforms
         self.worldFrame = rospy.get_param("~world_frame", "world")
         target_tracking = rospy.get_param("~target_tracking", "false")
-        print("test: ", target_tracking)
         quad_name = rospy.get_param("~frame")
         self.frame = quad_name + "/base_link"
         self.tf_listener = TransformListener()
@@ -38,6 +34,7 @@ class MPCDemo():
         if self.target_tracking:
             self.rebase = True
         self.returning_to_base = False
+        
         # subscribers and publishers
         self.rate = rospy.Rate(250) # was 250
         self.angular_vel = np.zeros([3,])  # angular velocity updated by imu subscriber
@@ -45,11 +42,13 @@ class MPCDemo():
         self.curr_quat = np.zeros([4,])
         self.target_pos = np.zeros([3,])
         self.target_vel = np.zeros([3,])
+        self.battery = 4.0
         self.yaw_pid = YawPID()
         self.est_vel_pub = rospy.Publisher('est_vel', TwistStamped, queue_size=1)  # publishing estimated velocity
         self.u_pub = rospy.Publisher('u_euler', TwistStamped, queue_size=1)  # publishing stamped 
         self.cmd_stamped_pub = rospy.Publisher('cmd_vel_stamped', TwistStamped, queue_size=1)  # publishing time stamped cmd_vel
-        self.imu_sub = rospy.Subscriber('/crazyflie/imu', Imu, self.imu_callback)  # subscribing imu
+        self.imu_sub = rospy.Subscriber('/crazyflie/imu', Imu, self.imu_callback)  # subscribing imui
+        self.batt_sub = rospy.Subscriber('/crazyflie/battery', Float32, self.batt_callback)
         self.cmd_pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)  # publishing to cmd_vel to control crazyflie
         self.goal_pub = rospy.Publisher('goal', TwistStamped, queue_size=1)  # publishing waypoints along the trajectory
         self.target_sub = rospy.Subscriber("/crazyflie/demo_target", PoseStamped, self.target_callback)     
@@ -63,29 +62,19 @@ class MPCDemo():
         self.m_thrust = 0
         self.m_startZ = 0
         
-        t_final = 11
-        radius = 0.3
-        t_plot = np.linspace(0, t_final, num=500)
-        # center of the circle is 0.2172, 4.5455
-        x_traj = radius * np.cos(t_plot) + -0.311
-        y_traj = radius * np.sin(t_plot) + -1.511
-  
-        z_traj = np.zeros((len(t_plot),)) + 0.4111
-        circle_points = np.stack((x_traj, y_traj, z_traj), axis=1)
-        print("check bool:", self.target_tracking)
-        #print("points shape", points.shape)
-        #points[-1, 2] = 0.2 #final landing height - > convert to a rosservice
-        #print("final points shape", points.shape)
         self.base_pos = tinyboat_trajs["right_base"]
-        #points = np.array([[0.2172, 4.5455, 0.5],
-        #                   [0.2172, 4.5455, 0.6]])
-        #-----GENERATE TAKEOFF AND LANDING TRAJECTORY
         points = tinyboat_trajs["traj3"]
         self.takeoff_z = self.base_pos
         self.takeoff_z[2] = 0.3
-        takeoff_points = np.vstack((np.array([points[0, 0], points[0, 1], 0]), self.takeoff_z))
+        takeoff_points = np.vstack((np.array([self.base_pos[0], 
+                                              self.base_pos[1], 0]), 
+                                    self.takeoff_z))
         self.traj_takeoff = self.generate_traj(takeoff_points)
-        land_points = np.vstack((self.base_pos, np.array([self.base_pos[0], self.base_pos[1], 0.1]))) # let the ending point be at the same x y location with height 0.2
+        
+        land_points = np.vstack((self.base_pos, 
+                                 np.array([self.base_pos[0], 
+                                           self.base_pos[1], 
+                                           0.05]))) # let the ending point be at the same x y location with height 0.2
         self.traj_land = self.generate_traj(land_points)
         
         #-----GENERATE MAIN TRAJECTORY
@@ -113,6 +102,9 @@ class MPCDemo():
         self.angular_vel[1] = imu_angular_vel.y
         self.angular_vel[2] = imu_angular_vel.z
 
+    def batt_callback(self, data):
+        self.battery = data.data
+
     def vicon_callback(self, data):
         self.curr_pos[0] = data.pose.position.x
         self.curr_pos[1] = data.pose.position.y
@@ -121,7 +113,12 @@ class MPCDemo():
         self.curr_quat[1] = data.pose.orientation.y
         self.curr_quat[2] = data.pose.orientation.z
         self.curr_quat[3] = data.pose.orientation.w
-        
+
+    def base_callback(self, data):
+        self.base_pos[0] = data.pose.position.x
+        self.base_pos[1] = data.pose.position.y
+        self.base_pos[2] = data.pose.position.z + 0.207  # elevate the z to be above base
+
     def target_callback(self, data):
         self.target_pos[0] = data.pose.position.x
         self.target_pos[1] = data.pose.position.y
@@ -184,7 +181,7 @@ class MPCDemo():
             points[:, 1] += 0.12
             traj = self.generate_traj(points)
             self.track_traj(traj)
-            if self.curr_pos[2] - self.target_pos[2] <= 0.07 and np.abs(self.curr_pos[0] - self.target_pos[0]) <= 0.05 and np.abs(self.curr_pos[1] - self.target_pos[1]) <= 0.05:
+            if self.curr_pos[2] - self.target_pos[2] <= 0.1 and np.abs(self.curr_pos[0] - self.target_pos[0]) <= 0.05 and np.abs(self.curr_pos[1] - self.target_pos[1]) <= 0.05:
                 msg = Twist()
                 self.cmd_pub.publish(msg)
                 if self.rebase:
@@ -195,9 +192,9 @@ class MPCDemo():
 
                     interp_time = [1,6]
                     points = interp1d(interp_time, np.vstack([self.curr_pos, self.base_pos]), axis=0)([1,2,3,4,5,6])
-                    points[:, 2] = 0.3
-                    points[1, 2] = self.curr_pos[2] + 0.35
-                    points[-1, 2] = self.base_pos[2] + 0.17
+                    points[:, 2] = 0.35
+                    points[1, 2] = self.curr_pos[2] + 0.40
+                    points[-1, 2] = self.base_pos[2] + 0.1
                     self.traj = self.generate_traj(points)
                     self.t0 = rospy.get_time()
 
@@ -208,7 +205,7 @@ class MPCDemo():
         else:
             #print("back to normal landing!")
             self.track_traj(self.traj_land)
-            if self.curr_pos[2] <= self.base_pos[2] + 0.1 and np.abs(self.curr_pos[0] - self.base_pos[0]) <= 0.05 and np.abs(self.curr_pos[0]-self.base_pos[0]) <= 0.05:
+            if self.curr_pos[2] <= 0.17 and np.abs(self.curr_pos[0] - self.base_pos[0]) <= 0.05 and np.abs(self.curr_pos[0]-self.base_pos[0]) <= 0.05:
                 self.returning_to_base = False
                 self.m_state = 0
                 msg = Twist()
@@ -219,7 +216,7 @@ class MPCDemo():
         #print("returning to base")
         self.track_traj(self.traj)
         
-        if np.abs(self.curr_pos[0] -self.base_pos[0]) <=0.1 and np.abs(self.curr_pos[1] - self.base_pos[1]) <=0.1 and self.curr_pos[2] <= self.base_pos[2] + 0.1:
+        if np.abs(self.curr_pos[0] -self.base_pos[0]) <=0.15 and np.abs(self.curr_pos[1] - self.base_pos[1]) <=0.1 and self.curr_pos[2] <= self.base_pos[2] + 0.1:
             # self.rebase = False
             self.m_state = 3
             self.returning_to_base = True
@@ -343,7 +340,12 @@ class MPCDemo():
 
     def run(self):
         while not rospy.is_shutdown():
+
             if self.m_state == 0:
+                if self.battery < 3.75:
+                    rospy.loginfo("crazyflie battery low, is %s Volts", self.battery)
+                else:
+                    rospy.loginfo("crazyflie battery good!")
                 self.idle()
             
             elif self.m_state == 3:

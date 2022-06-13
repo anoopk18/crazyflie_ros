@@ -18,9 +18,9 @@ class RigidHybrid(ODEF):
     
     def cascade(self):
         self.n_old_layers = len(self.nn_model)
-        new_layers = [nn.Linear(6, 16),
+        new_layers = [nn.Linear(6, 32),
                       nn.Tanh(),
-                      nn.Linear(16, 6)]
+                      nn.Linear(32, 6)]
         for i in range(len(new_layers)):
             if str(self.layers[i])[:6] == 'Linear':
                 torch.nn.init.xavier_uniform_(new_layers[i].weight)

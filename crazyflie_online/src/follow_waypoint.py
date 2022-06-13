@@ -28,11 +28,8 @@ from scipy.interpolate import interp1d
 class MPCDemo():
     def __init__(self):
         model_list = glob.glob("/home/tom/.ros/OnlineModels/online*")
-        data_list = glob.glob("/home/tom/.ros/OnlineData/online*")
         for model_path in model_list:
             os.remove(model_path)
-        for data_path in data_list:
-            os.remove(data_path)
 
         rospy.init_node('mpc_demo', anonymous=True)  # initializing node
         self.worldFrame = rospy.get_param("~world_frame", "world")
@@ -371,6 +368,7 @@ class MPCDemo():
         est_v_msg.twist.linear.x = est_v[0]  
         est_v_msg.twist.linear.y = est_v[1]
         est_v_msg.twist.linear.z = est_v[2]
+        est_v_msg.twist.angular.x = self.controller.model_update_cnt
         
         # logging time stamped cmd_vel
         cmd_stamped_msg = TwistStamped()

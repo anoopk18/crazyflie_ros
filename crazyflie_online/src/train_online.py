@@ -80,7 +80,7 @@ def find_latest_data(data_path):
     """
     find the latest saved data and return its index
     """
-    data_cnt = 2  # the first index to start looking
+    data_cnt = 0  # the first index to start looking
     while os.path.exists(data_path + "online_data" + str(data_cnt) + ".npy"):
         data_cnt += 1
     return data_cnt
@@ -129,7 +129,7 @@ if __name__ == '__main__':
             save_path = '/home/tom/.ros/OnlineModels/online_model{0}.pth'.format(model_cnt)  # path for saving the model
             ITER_OFFSET = 0
             BATCH_SKIP = 1
-            EPOCHs = 100  # No. of epochs to optimize
+            EPOCHs = 50  # No. of epochs to optimize
             LOOKAHEAD = 2  # alpha, the number of steps to lookahead
             name = "lookahead_" + str(LOOKAHEAD - 1)
             LR = 0.01  # optimization step size

@@ -10,7 +10,7 @@ from geometry_msgs.msg import TwistStamped
 
 class DataWriter(object):
     def __init__(self):
-        self.data_write_duration = 4.0  # in seconds
+        self.data_write_duration = 3.0  # in seconds
         self.curr_pos = np.zeros([3,])
         self.curr_vel = np.zeros([3,])
         self.curr_u = np.zeros([3,])
@@ -21,6 +21,7 @@ class DataWriter(object):
         self.pos_sub = rospy.Subscriber("/crazyflie/tf_pos", PoseStamped, self.pos_callback)
         self.vel_sub = rospy.Subscriber("/crazyflie/est_vel", TwistStamped, self.vel_callback)
         self.u_sub = rospy.Subscriber("/crazyflie/u_euler", TwistStamped, self.u_callback)
+        self.active = False
 
     def lpf(self, vel_data):
         fs = 1000  # sampling frequency
@@ -50,8 +51,19 @@ class DataWriter(object):
         self.curr_u[2] = data.twist.linear.z
 
     def run(self):
+
         while not rospy.is_shutdown():
-            if rospy.get_time() - self.t0 > self.data_write_duration:
+            # set the data writer to be active 2 seconds after the height exceeds 0.15
+            if self.curr_pos[2] >= 0.15:
+                if not self.active:
+                    chkpt = rospy.get_time()
+                    while rospy.get_time() - chkpt < 3.0:
+                        continue
+                    self.t0 = rospy.get_time()
+                    self.active = True
+                    rospy.loginfo("[Data Writer] DataWriter is active!")
+
+            if rospy.get_time() - self.t0 > self.data_write_duration and self.active:
                 info_str = "Writing data" + str(self.data_idx)
                 rospy.loginfo(info_str)
                 curr_data = np.array(self.data_buffer)
@@ -62,8 +74,10 @@ class DataWriter(object):
                 self.t0 = rospy.get_time()  # rest t0
                 self.data_idx += 1  # increment data index
         
-            agg_data = np.concatenate([self.curr_pos, self.curr_vel, self.curr_u])
-            self.data_buffer.append(agg_data)
+            if self.active:
+                agg_data = np.concatenate([self.curr_pos, self.curr_vel, self.curr_u])
+                self.data_buffer.append(agg_data)
+            
             self.rate.sleep()
 
 

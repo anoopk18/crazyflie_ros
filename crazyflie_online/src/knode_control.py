@@ -50,28 +50,7 @@ class KNODEControl(object):
         xdot            = vertcat(self.x[3], self.x[4], self.x[5])
         xdotdot         = self.u  # Notice that there are no gravity term here
         self.ode             = vertcat(xdot, xdotdot)
-        
-        # loading neural network parameters
-        # torch_path = "/home/tom/catkin_ws/src/crazyflie_ros/crazyflie_online/src/OnlineModels/test_model1.pth"
-        # ode_torch = torch.load(torch_path, map_location=torch.device('cpu'))['ode_train']
-        # param_ls = []
-        # for _, layer in ode_torch.func.state_dict().items():
-        #     param_ls.append(layer.detach().cpu().numpy())
-        
-        # ode_nn = vertcat(x, u)
-        # unrolling the nn to build a functioni
-        # n_layers = len(ode_torch.func.nn_model)
-        # param_cnt = 0
-        # for i in range(n_layers):
-        #    # hidden layers
-        #    if str(ode_torch.func.nn_model[i]) == 'Tanh()':
-        #        ode_nn = tanh(ode_nn)
-        #    else:
-        #        ode_nn = mtimes(param_ls[param_cnt], ode_nn) + param_ls[param_cnt + 1]
-        #        param_cnt += 2
-        # 
-        # ode_hybrid = ode + ode_nn  # summing knowledge and nn 
-        
+               
         f               = Function('f', [self.x, self.u], [self.ode])
 
         dae = {'x': self.x, 'p': self.u, 'ode': f(self.x, self.u)}
@@ -82,6 +61,7 @@ class KNODEControl(object):
         self.Dynamics = Function('F', [self.x, self.u], [x_next])
 
         self.downsample_cnt = 0
+        self.model_update_cnt = 0
     
     def update_model(self, torch_path):
         #x = MX.sym('x', self.num_states, 1)
@@ -113,6 +93,7 @@ class KNODEControl(object):
         res = intg(x0=self.x, p=self.u)
         x_next = res['xf']
         self.Dynamics = Function('F', [self.x, self.u], [x_next])
+        self.model_update_cnt += 1
         return 1
 
 

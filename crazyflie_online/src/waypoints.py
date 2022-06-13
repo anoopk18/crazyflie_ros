@@ -6,7 +6,7 @@ traj2: zig zag
 traj3: sampling a few random points
 
 """
-t_final = 50
+t_final = 70
 radius = 0.5
 height = 0.55
 center_x = 0.2410

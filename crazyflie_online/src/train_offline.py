@@ -72,9 +72,10 @@ def sample_and_grow(ode_train, traj_list, epochs, LR, lookahead, l2_lambda, plot
                          "Loss: {5:.3e}"
             print(plot_title.format(i, step_size, n_segments, LOOKAHEAD, LR, loss.item()))
             print("first and last param std:\n", torch.std(ode_train.func.nn_model[0].weight).detach().numpy(), torch.std(ode_train.func.nn_model[-1].weight).detach().numpy())
+            if save_path is not None:
+                torch.save({'ode_train': ode_train, 
+                            'train_loss_arr': train_loss_arr}, save_path + "_epoch" + str(i) + ".pth")
 
-    if save_path is not None:
-        torch.save({'ode_train': ode_train, 'train_loss_arr': train_loss_arr}, save_path)
 
 
 def find_latest_data(data_path):
@@ -114,14 +115,14 @@ if __name__ == '__main__':
     step_skip = 1  # number of interpolations between observations
     train_loss_arr = []
     # save_path = 'SavedModels/ral_rr_phys_exp_smaller_circle.pth'  # path for saving the model
-    save_path = 'offline_model.pth'  # path for saving the model
+    save_path = 'OfflineModels/offline_model'  # path for saving the model
     ITER_OFFSET = 0
     BATCH_SKIP = 1
     EPOCHs = 1000  # No. of epochs to optimize
     LOOKAHEAD = 2  # alpha, the number of steps to lookahead
     name = "lookahead_" + str(LOOKAHEAD - 1)
     LR = 0.01  # optimization step size
-    plot_freq = 20
+    plot_freq = 50
     l2_lambda = 0e-7
     sample_and_grow(ode_train, train_traj_list, EPOCHs, LR, LOOKAHEAD, l2_lambda,
                     plot_freq=plot_freq, save_path=save_path, step_skip=step_skip)

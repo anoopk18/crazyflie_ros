@@ -10,7 +10,7 @@ from geometry_msgs.msg import TwistStamped
 
 class DataWriter(object):
     def __init__(self):
-        self.data_write_duration = 30  # in seconds
+        self.data_write_duration = 2  # in seconds
         self.curr_pos = np.zeros([3,])
         self.curr_vel = np.zeros([3,])
         self.curr_u = np.zeros([3,])

@@ -88,6 +88,7 @@ class MPCDemo():
         self.traj = self.generate_traj(points)  # input points should have size [traj_len, 3]
         
         self.controller = KNODEControl()  # controller
+        # self.controller.update_model("offline_model_epoch500.pth")
         self.model_cnt = 0
         self.initial_state = {'x': np.array([0, 0, 0]), # positions
                               'v': np.array([0, 0, 0]), # velocities

@@ -20,7 +20,7 @@ from std_srvs.srv import Empty, EmptyResponse
 from scipy.spatial.transform import Rotation
 import waypoint_traj as wt
 from mpc_control import MPControl
-from knode_control import KNODEControl
+from knode_control_additive import KNODEControl
 from geometric_control import GeometriControl
 from scipy.interpolate import interp1d
 
@@ -368,7 +368,8 @@ class MPCDemo():
         est_v_msg.twist.linear.x = est_v[0]  
         est_v_msg.twist.linear.y = est_v[1]
         est_v_msg.twist.linear.z = est_v[2]
-        est_v_msg.twist.angular.x = self.controller.model_update_cnt
+        if self.controller.mode == 'knode':
+            est_v_msg.twist.angular.x = self.controller.model_update_cnt
         
         # logging time stamped cmd_vel
         cmd_stamped_msg = TwistStamped()

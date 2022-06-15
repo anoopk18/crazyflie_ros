@@ -88,10 +88,6 @@ def find_latest_data(data_path):
 
     
 if __name__ == '__main__':
-    data_list = glob.glob("/home/tom/.ros/OnlineData/online*")
-    for data_path in data_list:
-        os.remove(data_path)
-
     # KNODE parameters
     ode_solve = RK
     step_size = 1/400
@@ -100,46 +96,32 @@ if __name__ == '__main__':
     model_cnt = 0
     ode_train = NeuralODE(RigidHybridAdditive(), ode_solve, step_size)
     
-    while(1):
-    
-            folder_path = "/home/tom/.ros/OnlineData/"
-            data_cnt = find_latest_data(folder_path)
-            curr_check_path = folder_path + "online_data{0}.npy".format(data_cnt)
-            while not os.path.exists(curr_check_path):
-                time.sleep(2)
-                print("waiting for data:" + curr_check_path) 
-            print(train_verbose_header + "training with data {0}".format(data_cnt)) 
-            training_data_path_list = [curr_check_path]
-            train_traj_list = []
-            # concatenating all trajectories into a list
-            for i, data_path in enumerate(training_data_path_list):
-                with open(data_path, 'rb') as f:
-                    train_set = np.load(f)
-                    print("Training traj {0} has shape: \n".format(i), train_set.shape)
-                train_set = Tensor(train_set)
-                print("train set shape is: ", train_set.shape)
-                train_traj = train_set.detach().unsqueeze(1)
-                train_traj = train_traj + torch.randn_like(train_traj) * 0.00
-                train_traj_list.append(train_traj)
+    training_data_path_list = ["OfflineData/training_data.npy"]
+    train_traj_list = []
+    # concatenating all trajectories into a list
+    for i, data_path in enumerate(training_data_path_list):
+        with open(data_path, 'rb') as f:
+            train_set = np.load(f)
+            print("Training traj {0} has shape: \n".format(i), train_set.shape)
+        train_set = Tensor(train_set)
+        print("train set shape is: ", train_set.shape)
+        train_traj = train_set.detach().unsqueeze(1)
+        train_traj = train_traj + torch.randn_like(train_traj) * 0.00
+        train_traj_list.append(train_traj)
 
-            # training parameters
-            DEBUG = False
-            step_skip = 1  # number of interpolations between observations
-            train_loss_arr = []
-            # save_path = 'SavedModels/ral_rr_phys_exp_smaller_circle.pth'  # path for saving the model
-            save_path = '/home/tom/.ros/OnlineModels/online_model{0}.pth'.format(model_cnt)  # path for saving the model
-            ITER_OFFSET = 0
-            BATCH_SKIP = 1
-            EPOCHs = 60  # No. of epochs to optimize
-            LOOKAHEAD = 2  # alpha, the number of steps to lookahead
-            name = "lookahead_" + str(LOOKAHEAD - 1)
-            LR = 0.01  # optimization step size
-            plot_freq = 20
-            l2_lambda = 5e-7
-            sample_and_grow(ode_train, train_traj_list, EPOCHs, LR, LOOKAHEAD, l2_lambda,
-                            plot_freq=plot_freq, save_path=save_path, step_skip=step_skip)
-            model_cnt += 1
-            data_cnt += 1
-            # load the previous model and cascade one layer
-            ode_train = torch.load(save_path)['ode_train']
-            ode_train.func.cascade()
+    # training parameters
+    DEBUG = False
+    step_skip = 1  # number of interpolations between observations
+    train_loss_arr = []
+    # save_path = 'SavedModels/ral_rr_phys_exp_smaller_circle.pth'  # path for saving the model
+    save_path = 'offline_model.pth'  # path for saving the model
+    ITER_OFFSET = 0
+    BATCH_SKIP = 1
+    EPOCHs = 1000  # No. of epochs to optimize
+    LOOKAHEAD = 2  # alpha, the number of steps to lookahead
+    name = "lookahead_" + str(LOOKAHEAD - 1)
+    LR = 0.01  # optimization step size
+    plot_freq = 20
+    l2_lambda = 0e-7
+    sample_and_grow(ode_train, train_traj_list, EPOCHs, LR, LOOKAHEAD, l2_lambda,
+                    plot_freq=plot_freq, save_path=save_path, step_skip=step_skip)

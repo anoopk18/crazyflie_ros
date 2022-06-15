@@ -24,7 +24,7 @@ def get_min_jerk(points, t):
 class WaypointTraj(object):
     def __init__(self, points):
         self.points         = points
-        self.desired_spd    = 0.6 # 0.75, 3.0
+        self.desired_spd    = 0.4 # 0.75, 3.0
 
         num_pts     = self.points.shape[0]
         dist        = linalg.norm(np.diff(self.points, axis=0), axis=1)

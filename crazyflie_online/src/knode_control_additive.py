@@ -2,6 +2,7 @@ from casadi import *
 from scipy.spatial.transform import Rotation
 from tf.transformations import euler_from_matrix
 import torch
+import time
 from NODE.NODE import *
 
 class KNODEControl(object):
@@ -71,8 +72,12 @@ class KNODEControl(object):
     def update_model(self, torch_path):
         #x = MX.sym('x', self.num_states, 1)
         #u = MX.sym('u', self.num_inputs, 1)
+        try: 
+            ode_torch = torch.load(torch_path)['ode_train']
+        except:
+            time.sleep(0.001)
+            ode_torch = torch.load(torch_path)['ode_train']
         
-        ode_torch = torch.load(torch_path, map_location=torch.device('cpu'))['ode_train']
         param_ls = []
         for _, layer in ode_torch.func.state_dict().items():
             param_ls.append(layer.detach().cpu().numpy())
@@ -81,6 +86,8 @@ class KNODEControl(object):
         # unrolling the nn to build a functioni
         n_layers = len(ode_torch.func.nn_model)
         param_cnt = 0
+        ode_hybrid = self.ode
+
         for i in range(n_layers):
             # hidden layers
             if str(ode_torch.func.nn_model[i]) == 'Tanh()':
@@ -88,8 +95,12 @@ class KNODEControl(object):
             else:
                 ode_nn = mtimes(param_ls[param_cnt], ode_nn) + param_ls[param_cnt + 1]
                 param_cnt += 2
+            # additive
+            if (i + 1) % 3 == 0:
+                ode_hybrid = ode_hybrid + ode_nn
+                if (i + 1) != n_layers:
+                    ode_nn = vertcat(self.x, self.u)
         
-        ode_hybrid = self.ode + ode_nn  # summing knowledge and nn 
         f               = Function('f', [self.x, self.u], [ode_hybrid])
 
         dae = {'x': self.x, 'p': self.u, 'ode': f(self.x, self.u)}

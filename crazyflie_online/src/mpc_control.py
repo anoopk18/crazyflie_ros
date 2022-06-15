@@ -44,8 +44,8 @@ class MPControl(object):
         u = MX.sym('u', self.num_inputs, 1)
 
         # These settings are for the kinematic model
-        sampling_rate   = 0.06
-        self.N_ctrl     = 10  # Control horizon (in number of timesteps)
+        sampling_rate   = 0.125
+        self.N_ctrl     = 5  # Control horizon (in number of timesteps)
 
         # Kinematic model
         xdot            = vertcat(x[3], x[4], x[5])
@@ -61,6 +61,10 @@ class MPControl(object):
         self.Dynamics = Function('F', [x, u], [x_next])
 
         self.downsample_cnt = 0
+        # Variables for warm-starting
+        self.init_mpc = 0
+        self.val_var = np.zeros((1,))
+        self.lam_g0 = np.zeros((1,))
 
     def update(self, t, state, flat_output):
         # State information
@@ -98,8 +102,22 @@ class MPControl(object):
             s_opts = dict(print_level=0)
             opti.solver("ipopt", p_opts, s_opts)
 
-            MPC_ctrl = opti.to_function('M', [p], [u[:, 0]])
-            self.r_ddot_des = MPC_ctrl(vertcat(pos, vel))
+            # Warm starting a solver after 1 cycle
+            if self.init_mpc >= 1:
+                opti.set_initial(opti.x, self.val_var)
+                opti.set_initial(opti.lam_g, self.lam_g0)
+
+            # Counter for warm starting
+            self.init_mpc += 1
+            
+            opti.set_value(p, vertcat(pos, vel))
+            sol             = opti.solve()
+            self.r_ddot_des = np.squeeze(np.array([sol.value(u[:, 0])]))
+            self.val_var    = sol.value(opti.x)
+            self.lam_g0     = sol.value(opti.lam_g)
+
+            #MPC_ctrl = opti.to_function('M', [p], [u[:, 0]])
+            #self.r_ddot_des = MPC_ctrl(vertcat(pos, vel))
         self.downsample_cnt += 1
 
         # Position controller

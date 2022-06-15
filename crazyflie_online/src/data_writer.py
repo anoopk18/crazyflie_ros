@@ -10,7 +10,7 @@ from geometry_msgs.msg import TwistStamped
 
 class DataWriter(object):
     def __init__(self):
-        self.data_write_duration = 3.0  # in seconds
+        self.data_write_duration = 30  # in seconds
         self.curr_pos = np.zeros([3,])
         self.curr_vel = np.zeros([3,])
         self.curr_u = np.zeros([3,])
@@ -54,7 +54,7 @@ class DataWriter(object):
 
         while not rospy.is_shutdown():
             # set the data writer to be active 2 seconds after the height exceeds 0.15
-            if self.curr_pos[2] >= 0.15:
+            if self.curr_pos[2] >= 0.15: # was 0.15
                 if not self.active:
                     chkpt = rospy.get_time()
                     while rospy.get_time() - chkpt < 3.0:

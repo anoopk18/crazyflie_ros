@@ -98,7 +98,7 @@ if __name__ == '__main__':
     torch.manual_seed(0)
 
     model_cnt = 0
-    ode_train = NeuralODE(RigidHybridAdditive(), ode_solve, step_size)
+    ode_train = NeuralODE(RigidHybridAdditiveForgetting(), ode_solve, step_size)
     
     while(1):
     
@@ -135,7 +135,7 @@ if __name__ == '__main__':
             name = "lookahead_" + str(LOOKAHEAD - 1)
             LR = 0.01  # optimization step size
             plot_freq = 20
-            l2_lambda = 5e-7
+            l2_lambda = 1e-7
             sample_and_grow(ode_train, train_traj_list, EPOCHs, LR, LOOKAHEAD, l2_lambda,
                             plot_freq=plot_freq, save_path=save_path, step_skip=step_skip)
             model_cnt += 1

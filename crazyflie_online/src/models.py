@@ -1,5 +1,64 @@
 from NODE.NODE import *
 
+class RigidHybridAdditiveForgetting(ODEF):
+    def __init__(self):  # quadparams is only a placeholder, not actually used
+        super(RigidHybridAdditiveForgetting, self).__init__()
+        self.layers = [nn.Linear(9, 20),
+                       nn.Tanh(),
+                       nn.Linear(20, 6)]
+        
+        for i in range(len(self.layers)):
+            if str(self.layers[i])[:6] == 'Linear':
+                torch.nn.init.xavier_uniform_(self.layers[i].weight)
+                torch.nn.init.zeros_(self.layers[i].bias)
+    
+        self.nn_model = nn.ModuleList(self.layers)
+        self.n_old_layers = 0
+        self.nn_pool_size = 3
+    
+    def cascade(self):
+        self.n_old_layers = len(self.nn_model)
+        if self.n_old_layers == self.nn_pool_size * 3:
+            self.n_old_layers = self.n_old_layers - 3
+        new_layers = [nn.Linear(9, 16),
+                      nn.Tanh(),
+                      nn.Linear(16, 6)]
+        
+        for i in range(len(new_layers)):
+            if str(self.layers[i])[:6] == 'Linear':
+                torch.nn.init.xavier_uniform_(new_layers[i].weight)
+                torch.nn.init.zeros_(new_layers[i].bias)
+
+        # adding new layers to the nn module
+        self.nn_model.extend(new_layers)
+        # only keep fixed number of layers
+        self.nn_model = self.nn_model[-self.nn_pool_size*3:]
+ 
+
+    def forward(self, z):
+        bs,_,_ = z.size()
+        z = z.squeeze(1)
+        x = z[:, :6]  # 6D state
+        u = z[:, 6:]  # 3D input
+        
+        x_dot = torch.zeros([bs, 6])
+        x_dot[:, :3] = x[:, 3:]
+        x_dot[:, 3:] = u
+         
+        temp = z
+        for i, l in enumerate(self.nn_model):
+            temp = l(temp)
+            if (i + 1)%3 == 0:
+                # exponential weighting. Old layer small weight
+                exp_weight = torch.exp(torch.tensor((i+1-len(self.nn_model))/3))
+                x_dot += exp_weight * temp
+                if (i+1) != len(self.nn_model):
+                    temp = z
+        
+        out = torch.cat([x_dot, torch.zeros([bs, 3])], 1)
+        #print("output shape is: ", out.shape)
+        return out.unsqueeze(1)
+ 
 class RigidHybridAdditive(ODEF):
     def __init__(self):  # quadparams is only a placeholder, not actually used
         super(RigidHybridAdditive, self).__init__()
@@ -52,9 +111,9 @@ class RigidHybridAdditive(ODEF):
         return out.unsqueeze(1)
  
 
-class RigidHybrid(ODEF):
+class RigidHybridCascade(ODEF):
     def __init__(self):  # quadparams is only a placeholder, not actually used
-        super(RigidHybrid, self).__init__()
+        super(RigidHybridCascade, self).__init__()
         self.layers = [nn.Linear(9, 32),
                        nn.Tanh(),
                        nn.Linear(32, 6)]

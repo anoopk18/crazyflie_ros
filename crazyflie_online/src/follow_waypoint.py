@@ -21,6 +21,7 @@ from scipy.spatial.transform import Rotation
 import waypoint_traj as wt
 from mpc_control import MPControl
 from knode_control_additive import KNODEControl
+from knode_control_additive_forgetting import KNODEControlForgetting
 from geometric_control import GeometriControl
 from scipy.interpolate import interp1d
 
@@ -86,8 +87,9 @@ class MPCDemo():
         
         #-----GENERATE MAIN TRAJECTORY
         self.traj = self.generate_traj(points)  # input points should have size [traj_len, 3]
-        
-        self.controller = KNODEControl()  # controller
+       
+        # self.controller = GeometriControl() 
+        self.controller = KNODEControlForgetting()  # controller
         # self.controller.update_model("offline_model_epoch500.pth")
         self.model_cnt = 0
         self.initial_state = {'x': np.array([0, 0, 0]), # positions
@@ -244,8 +246,8 @@ class MPCDemo():
   
         def map_u1(u1):
             # u1 ranges from -0.2 to 0.2
-            trim_cmd = 51000
-            min_cmd = 25000
+            trim_cmd = 51500 # was 51000
+            min_cmd = 28000
             u1_trim = 0.327
             c = min_cmd
             m = (trim_cmd - min_cmd)/u1_trim

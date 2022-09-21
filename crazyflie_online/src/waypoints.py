@@ -6,11 +6,11 @@ traj2: zig zag
 traj3: sampling a few random points
 
 """
-t_final = 60
+t_final = 50
 radius = 0.5
 height = 0.55
-center_x = 0.2410
-center_y = 4.555
+center_x = 0.1381 #0.2410
+center_y = 7.3723 #4.555
 t_plot = np.linspace(0, t_final, num=500)
 x_traj = radius * np.cos(t_plot) + center_x
 y_traj = radius * np.sin(t_plot) + center_y

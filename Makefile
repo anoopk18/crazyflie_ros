@@ -12,14 +12,14 @@ ROS_SOURCE_CMD := source /opt/ros/humble/setup.bash
 
 # Look for dev container, build if it doesn't exist
 check-image:
-	@if ! docker images -q $(DOCKER_IMAGE) > /dev/null; then \
+	@if ! sudo docker images -q $(DOCKER_IMAGE) > /dev/null; then \
 		echo "Image not found, building..."; \
-		docker build -t $(DOCKER_IMAGE) -f $(DOCKERFILE) .; \
+		sudo docker build -t $(DOCKER_IMAGE) -f $(DOCKERFILE) .; \
 	fi
 
 # Start the container
 run: check-image
-	@docker run --gpus all --rm -it \
+	@sudo docker run --gpus all --rm -it \
 		--volume $(CURRENT_DIR):$(ROS_WS_PATH):rw \
 		--runtime nvidia \
 		--env NVIDIA_VISIBLE_DEVICES=all \
@@ -39,5 +39,5 @@ run: check-image
 
 # Clean up the container
 clean:
-	@docker rm -f $(DOCKER_REPOSITORY) || true
-	@docker rmi -f $(DOCKER_IMAGE) || true
+	sudo docker rm -f $(DOCKER_REPOSITORY) || true
+	sudo docker rmi -f $(DOCKER_IMAGE) || true

@@ -15,7 +15,8 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update -q && \
     python3-colcon-mixin \
     python3-rosdep \
     libpython3-dev \
-    libusb-1.0-0-dev
+    libusb-1.0-0-dev \
+    python3-catkin-tools
     # rm -rf /var/lib/apt/lists/*
 
 # Create ROS workspace
